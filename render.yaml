@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: student-tracking-portal
+    runtime: node
+    plan: free
+    buildCommand: npm run build
+    startCommand: npm run start
+    envVars:
+      - key: GOOGLE_SHEET_ID
+        sync: false
+      - key: GOOGLE_SERVICE_ACCOUNT_JSON
+        sync: false
+      - key: ADMIN_KEY
+        sync: false
