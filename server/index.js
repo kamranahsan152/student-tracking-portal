@@ -619,6 +619,8 @@ async function getAdminAnalytics() {
       rollNo: student.rollNo,
       name: student.name,
       semester: student.semester,
+      email: student.email,
+      githubProfile: student.githubProfile,
       submitted,
       missing,
       pending,
