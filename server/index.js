@@ -179,6 +179,63 @@ async function append(range, values) {
   });
 }
 
+let sheetIdsCache = null;
+
+/*
+    Sheet tab names -> numeric sheetId (gid),
+    needed for batchUpdate row-copy requests.
+*/
+
+async function getSheetId(title) {
+  if (!sheetIdsCache) {
+    const meta = await getSheets().spreadsheets.get({
+      spreadsheetId: getSpreadsheetId(),
+      fields: "sheets.properties",
+    });
+
+    sheetIdsCache = Object.fromEntries(
+      meta.data.sheets.map((sheet) => [
+        sheet.properties.title,
+        sheet.properties.sheetId,
+      ]),
+    );
+  }
+
+  return sheetIdsCache[title];
+}
+
+/*
+    Copy an existing row's formatting + formulas onto a new
+    row (relative references shift automatically), so a newly
+    added student gets the same live stats columns, styles,
+    and colors as everyone else instead of a blank/broken row.
+*/
+
+async function copyRowFormatting(sheetTitle, sourceRow, destRow) {
+  const sheetId = await getSheetId(sheetTitle);
+
+  const range = (row) => ({
+    sheetId,
+    startRowIndex: row - 1,
+    endRowIndex: row,
+  });
+
+  await getSheets().spreadsheets.batchUpdate({
+    spreadsheetId: getSpreadsheetId(),
+    requestBody: {
+      requests: [
+        {
+          copyPaste: {
+            source: range(sourceRow),
+            destination: range(destRow),
+            pasteType: "PASTE_NORMAL",
+          },
+        },
+      ],
+    },
+  });
+}
+
 /* =========================================================
    UTILITIES
 ========================================================= */
@@ -612,47 +669,41 @@ app.post("/api/admin/students", adminAuth, async (req, res) => {
     }
 
     /*
-        Find first empty row in Students (A:A)
-        and Student Tracking (A:A), same pattern
-        used for Submissions.
+        Students and Student Tracking must always add a
+        student at the same relative position, or the two
+        sheets drift out of alignment and every cross-sheet
+        formula between them breaks. Derive both target rows
+        from the same count (existing students already
+        fetched above) instead of scanning each sheet for its
+        own first empty row independently.
       */
 
-    const studentRows = await get(
-      `${cfg.students}!A${cfg.studentStart}:A${cfg.studentEnd}`,
-    );
+    const nextIndex = existing.length;
 
-    /*
-        The Sheets API omits trailing rows that have
-        no content, so a short array also means the
-        rows after it are empty and available.
-      */
+    const studentRow = cfg.studentStart + nextIndex;
+    const trackingRow = cfg.trackingStart + nextIndex;
 
-    let studentEmptyIndex = studentRows.findIndex((row) => !row[0]);
-
-    if (studentEmptyIndex < 0) {
-      studentEmptyIndex = studentRows.length;
-    }
-
-    if (cfg.studentStart + studentEmptyIndex > cfg.studentEnd) {
+    if (studentRow > cfg.studentEnd) {
       throw new Error("Students sheet is full.");
     }
 
-    const trackingRows = await get(
-      `${cfg.tracking}!A${cfg.trackingStart}:A${cfg.trackingEnd}`,
-    );
-
-    let trackingEmptyIndex = trackingRows.findIndex((row) => !row[0]);
-
-    if (trackingEmptyIndex < 0) {
-      trackingEmptyIndex = trackingRows.length;
-    }
-
-    if (cfg.trackingStart + trackingEmptyIndex > cfg.trackingEnd) {
+    if (trackingRow > cfg.trackingEnd) {
       throw new Error("Student Tracking sheet is full.");
     }
 
-    const studentRow = cfg.studentStart + studentEmptyIndex;
-    const trackingRow = cfg.trackingStart + trackingEmptyIndex;
+    /*
+        Copy the row above's formatting + formulas onto the
+        new row first (skipped for the very first data row,
+        which has nothing above it to copy).
+      */
+
+    if (studentRow > cfg.studentStart) {
+      await copyRowFormatting(cfg.students, studentRow - 1, studentRow);
+    }
+
+    if (trackingRow > cfg.trackingStart) {
+      await copyRowFormatting(cfg.tracking, trackingRow - 1, trackingRow);
+    }
 
     await update(`${cfg.students}!A${studentRow}:E${studentRow}`, [
       [
