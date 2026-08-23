@@ -730,6 +730,129 @@ app.post("/api/admin/students", adminAuth, async (req, res) => {
 });
 
 /* =========================================================
+   ADMIN - EDIT STUDENT
+========================================================= */
+
+app.patch("/api/admin/students/:roll", adminAuth, async (req, res) => {
+  try {
+    const { name, semester, email, githubProfile } = req.body || {};
+
+    const cleanName = String(name || "").trim();
+
+    if (!cleanName) {
+      throw new Error("Student name is required.");
+    }
+
+    const existing = await students();
+
+    const index = existing.findIndex(
+      (student) => norm(student.rollNo) === norm(req.params.roll),
+    );
+
+    if (index < 0) {
+      throw new Error("Roll No not found.");
+    }
+
+    const cleanRoll = existing[index].rollNo;
+    const cleanSemester = String(semester || "").trim();
+
+    const studentRow = cfg.studentStart + index;
+    const trackingRow = cfg.trackingStart + index;
+
+    await update(`${cfg.students}!A${studentRow}:E${studentRow}`, [
+      [
+        cleanRoll,
+        cleanName,
+        cleanSemester,
+        String(email || "").trim(),
+        String(githubProfile || "").trim(),
+      ],
+    ]);
+
+    await update(`${cfg.tracking}!B${trackingRow}:C${trackingRow}`, [
+      [cleanName, cleanSemester],
+    ]);
+
+    res.json({ ok: true, rollNo: cleanRoll });
+  } catch (error) {
+    console.error("PATCH /api/admin/students:", error);
+
+    res.status(400).json({
+      error: error.message,
+    });
+  }
+});
+
+/* =========================================================
+   ADMIN - DELETE STUDENT
+========================================================= */
+
+app.delete("/api/admin/students/:roll", adminAuth, async (req, res) => {
+  try {
+    const existing = await students();
+
+    const index = existing.findIndex(
+      (student) => norm(student.rollNo) === norm(req.params.roll),
+    );
+
+    if (index < 0) {
+      throw new Error("Roll No not found.");
+    }
+
+    /*
+        Students and Student Tracking must stay at the same
+        relative position (see ADMIN - ADD STUDENT), so both
+        rows are deleted as real sheet rows (not just cleared)
+        so everything below shifts up together in both sheets.
+      */
+
+    const studentRow = cfg.studentStart + index;
+    const trackingRow = cfg.trackingStart + index;
+
+    const [studentsSheetId, trackingSheetId] = await Promise.all([
+      getSheetId(cfg.students),
+      getSheetId(cfg.tracking),
+    ]);
+
+    await getSheets().spreadsheets.batchUpdate({
+      spreadsheetId: getSpreadsheetId(),
+      requestBody: {
+        requests: [
+          {
+            deleteDimension: {
+              range: {
+                sheetId: studentsSheetId,
+                dimension: "ROWS",
+                startIndex: studentRow - 1,
+                endIndex: studentRow,
+              },
+            },
+          },
+          {
+            deleteDimension: {
+              range: {
+                sheetId: trackingSheetId,
+                dimension: "ROWS",
+                startIndex: trackingRow - 1,
+                endIndex: trackingRow,
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    res.json({ ok: true, rollNo: existing[index].rollNo });
+  } catch (error) {
+    console.error("DELETE /api/admin/students:", error);
+
+    res.status(400).json({
+      error: error.message,
+    });
+  }
+});
+
+/* =========================================================
    ADMIN - ANALYTICS
 ========================================================= */
 
