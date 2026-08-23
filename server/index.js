@@ -858,89 +858,86 @@ app.post("/api/admin/review", adminAuth, async (req, res) => {
 });
 
 /* =========================================================
-   REACT STATIC FILES
+   REACT STATIC FILES (local / non-Vercel only)
+
+   On Vercel the client build is served as static output
+   directly (see vercel.json) and this API runs as a
+   serverless function, so Express never needs to serve
+   the built files itself there.
 ========================================================= */
 
-/*
-   React production build:
+if (!process.env.VERCEL) {
+  const clientPath = path.resolve(__dirname, "../client/dist");
 
-   project/
-   ├── client/
-   │   └── dist/
-   │       └── index.html
-   │
-   └── server/
-       └── index.js
-
-   __dirname = project/server
-   ../client/dist = project/client/dist
-*/
-
-const clientPath = path.resolve(__dirname, "../client/dist");
-
-app.use(express.static(clientPath));
-
-/*
-   Express 5 compatible SPA fallback.
-*/
-
-app.get(/^(?!\/api).*/, (req, res) => {
-  res.sendFile(path.join(clientPath, "index.html"));
-});
-
-/* =========================================================
-   SERVER
-========================================================= */
-
-const port = Number(process.env.PORT) || 10000;
-
-try {
-  validateEnvironment();
+  app.use(express.static(clientPath));
 
   /*
-    Initialize Google Sheets once
-    during server startup so configuration
-    problems are detected immediately.
+     Express 5 compatible SPA fallback.
   */
 
-  getSheets();
-
-  console.log("");
-  console.log("========================================");
-  console.log("Student Tracking Portal");
-  console.log("========================================");
-
-  console.log("GOOGLE_SHEET_ID: OK");
-
-  console.log("GOOGLE_SERVICE_ACCOUNT_JSON: OK");
-
-  console.log("ADMIN_KEY: OK");
-
-  console.log(
-    `Google Service Account: ${
-      JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON).client_email
-    }`,
-  );
-
-  console.log(`Google Sheet ID: ${getSpreadsheetId()}`);
-
-  console.log(`Client build: ${clientPath}`);
-
-  console.log("========================================");
-  console.log("");
-} catch (error) {
-  console.error("");
-  console.error("========================================");
-  console.error("STARTUP CONFIGURATION ERROR");
-  console.error("========================================");
-  console.error(error.message);
-  console.error("");
-  console.error("Check server/.env and Google Sheets permissions.");
-  console.error("");
-
-  process.exit(1);
+  app.get(/^(?!\/api).*/, (req, res) => {
+    res.sendFile(path.join(clientPath, "index.html"));
+  });
 }
 
-app.listen(port, () => {
-  console.log(`Portal running on http://localhost:${port}`);
-});
+/* =========================================================
+   SERVER (local / non-Vercel only)
+
+   On Vercel, the exported app is invoked per-request by
+   the Node runtime instead of listening on a port.
+========================================================= */
+
+if (!process.env.VERCEL) {
+  const port = Number(process.env.PORT) || 10000;
+
+  try {
+    validateEnvironment();
+
+    /*
+      Initialize Google Sheets once
+      during server startup so configuration
+      problems are detected immediately.
+    */
+
+    getSheets();
+
+    console.log("");
+    console.log("========================================");
+    console.log("Student Tracking Portal");
+    console.log("========================================");
+
+    console.log("GOOGLE_SHEET_ID: OK");
+
+    console.log("GOOGLE_SERVICE_ACCOUNT_JSON: OK");
+
+    console.log("ADMIN_KEY: OK");
+
+    console.log(
+      `Google Service Account: ${
+        JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON).client_email
+      }`,
+    );
+
+    console.log(`Google Sheet ID: ${getSpreadsheetId()}`);
+
+    console.log("========================================");
+    console.log("");
+  } catch (error) {
+    console.error("");
+    console.error("========================================");
+    console.error("STARTUP CONFIGURATION ERROR");
+    console.error("========================================");
+    console.error(error.message);
+    console.error("");
+    console.error("Check server/.env and Google Sheets permissions.");
+    console.error("");
+
+    process.exit(1);
+  }
+
+  app.listen(port, () => {
+    console.log(`Portal running on http://localhost:${port}`);
+  });
+}
+
+export default app;
