@@ -1,0 +1,4 @@
+{
+  "name":"portal-server","private":true,"type":"module",
+  "dependencies":{"express":"^5.1.0","cors":"^2.8.5","googleapis":"^159.0.0","helmet":"^8.1.0"}
+}
