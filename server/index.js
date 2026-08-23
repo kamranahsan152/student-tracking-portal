@@ -43,10 +43,10 @@ const cfg = {
   admin: "Admin Review",
 
   studentStart: 4,
-  studentEnd: 73,
+  studentEnd: 153,
 
   trackingStart: 5,
-  trackingEnd: 74,
+  trackingEnd: 154,
 
   submissionStart: 4,
   submissionEnd: 203,
@@ -571,6 +571,98 @@ app.get("/api/admin/pending", adminAuth, async (req, res) => {
     console.error("GET /api/admin/pending:", error);
 
     res.status(500).json({
+      error: error.message,
+    });
+  }
+});
+
+/* =========================================================
+   ADMIN - ADD STUDENT
+========================================================= */
+
+app.post("/api/admin/students", adminAuth, async (req, res) => {
+  try {
+    const { rollNo, name, semester, email, githubProfile } = req.body || {};
+
+    const cleanRoll = String(rollNo || "").trim();
+    const cleanName = String(name || "").trim();
+
+    if (!cleanRoll) {
+      throw new Error("Roll No is required.");
+    }
+
+    if (!cleanName) {
+      throw new Error("Student name is required.");
+    }
+
+    const existing = await students();
+
+    if (existing.some((student) => norm(student.rollNo) === norm(cleanRoll))) {
+      throw new Error(`Roll No ${cleanRoll} already exists.`);
+    }
+
+    /*
+        Find first empty row in Students (A:A)
+        and Student Tracking (A:A), same pattern
+        used for Submissions.
+      */
+
+    const studentRows = await get(
+      `${cfg.students}!A${cfg.studentStart}:A${cfg.studentEnd}`,
+    );
+
+    /*
+        The Sheets API omits trailing rows that have
+        no content, so a short array also means the
+        rows after it are empty and available.
+      */
+
+    let studentEmptyIndex = studentRows.findIndex((row) => !row[0]);
+
+    if (studentEmptyIndex < 0) {
+      studentEmptyIndex = studentRows.length;
+    }
+
+    if (cfg.studentStart + studentEmptyIndex > cfg.studentEnd) {
+      throw new Error("Students sheet is full.");
+    }
+
+    const trackingRows = await get(
+      `${cfg.tracking}!A${cfg.trackingStart}:A${cfg.trackingEnd}`,
+    );
+
+    let trackingEmptyIndex = trackingRows.findIndex((row) => !row[0]);
+
+    if (trackingEmptyIndex < 0) {
+      trackingEmptyIndex = trackingRows.length;
+    }
+
+    if (cfg.trackingStart + trackingEmptyIndex > cfg.trackingEnd) {
+      throw new Error("Student Tracking sheet is full.");
+    }
+
+    const studentRow = cfg.studentStart + studentEmptyIndex;
+    const trackingRow = cfg.trackingStart + trackingEmptyIndex;
+
+    await update(`${cfg.students}!A${studentRow}:E${studentRow}`, [
+      [
+        cleanRoll,
+        cleanName,
+        String(semester || "").trim(),
+        String(email || "").trim(),
+        String(githubProfile || "").trim(),
+      ],
+    ]);
+
+    await update(`${cfg.tracking}!A${trackingRow}:C${trackingRow}`, [
+      [cleanRoll, cleanName, String(semester || "").trim()],
+    ]);
+
+    res.json({ ok: true, rollNo: cleanRoll });
+  } catch (error) {
+    console.error("POST /api/admin/students:", error);
+
+    res.status(400).json({
       error: error.message,
     });
   }
