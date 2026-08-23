@@ -41,6 +41,7 @@ function StudentPortal(){
         <div className="lookup glass-inner"><div className="input-wrap"><Icon>⌕</Icon><input value={roll} onChange={e=>{setRoll(e.target.value);setQuery(e.target.value)}} list="student-rolls" placeholder="Enter Roll No" onKeyDown={e=>e.key==='Enter'&&load()}/><datalist id="student-rolls">{students.map(x=><option key={x.rollNo} value={x.rollNo}>{x.name}</option>)}</datalist></div><button className="primary" onClick={()=>load()} disabled={loading}>{loading?'Loading…':'View progress'} <span>→</span></button></div>
         {query && !student && filtered.length>0 && <div className="suggestions">{filtered.map(x=><button key={x.rollNo} onClick={()=>{setRoll(x.rollNo);setQuery('');load(x.rollNo)}}><span>{x.name}</span><small>{x.rollNo}</small></button>)}</div>}
         {error && <div className="alert error">{error}</div>}{message && <div className="alert success">{message}</div>}
+        {!student && <div className="hero-highlights"><div><span>✓</span><div><strong>Submission history</strong>Every week, tracked</div></div><div><span>◷</span><div><strong>Review status</strong>Know what's pending</div></div><div><span>!</span><div><strong>Missing work</strong>Never miss a deadline</div></div></div>}
       </GlassCard>
       {student && <StudentDetails student={student} onSubmit={submit} />}
     </main>
