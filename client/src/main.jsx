@@ -1,11 +1,28 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Sparkles, Search, CheckCircle2, Clock, AlertTriangle, TrendingUp, LayoutGrid, Users, BarChart3, Star, RefreshCw, ArrowRight, ExternalLink, Mail, Code2, UserPlus, X } from 'lucide-react';
 import './styles.css';
 
+let toasts = [];
+const toastListeners = new Set();
+const notifyToasts = () => toastListeners.forEach(fn => fn());
+function pushToast(kind, text){
+  const id = Date.now() + Math.random();
+  toasts = [...toasts, { id, kind, text }];
+  notifyToasts();
+  setTimeout(() => { toasts = toasts.filter(t => t.id !== id); notifyToasts(); }, 4000);
+}
+const toast = { success: text => pushToast('success', text), error: text => pushToast('error', text) };
+function useToasts(){ return useSyncExternalStore(fn => { toastListeners.add(fn); return () => toastListeners.delete(fn); }, () => toasts); }
+function dismissToast(id){ toasts = toasts.filter(t => t.id !== id); notifyToasts(); }
+function Toasts(){
+  const items = useToasts();
+  return <div className="toast-stack">{items.map(t => <div key={t.id} className={`toast ${t.kind}`} onClick={() => dismissToast(t.id)}>{t.kind==='success'?<CheckCircle2 size={16}/>:<AlertTriangle size={16}/>}<span>{t.text}</span></div>)}</div>;
+}
+
 const api = (path, opt = {}) => fetch(path, {
-  headers: { 'Content-Type': 'application/json', ...(opt.headers || {}) },
   ...opt,
+  headers: { 'Content-Type': 'application/json', ...(opt.headers || {}) },
 }).then(async r => {
   const d = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(d.error || 'Request failed');
@@ -24,15 +41,14 @@ function ProgressBar({value}){ return <div className="progress"><i style={{width
 
 function StudentPortal(){
   const [students,setStudents]=useState([]), [roll,setRoll]=useState(''), [student,setStudent]=useState(null);
-  const [loading,setLoading]=useState(false), [message,setMessage]=useState(''), [error,setError]=useState('');
+  const [loading,setLoading]=useState(false);
   const [query,setQuery]=useState('');
-  useEffect(()=>{ api('/api/students').then(setStudents).catch(e=>setError(e.message)); },[]);
+  useEffect(()=>{ api('/api/students').then(setStudents).catch(e=>toast.error(e.message)); },[]);
   const filtered = useMemo(()=>students.filter(x=>`${x.rollNo} ${x.name}`.toLowerCase().includes(query.toLowerCase())).slice(0,8),[students,query]);
-  async function load(value=roll){ setError(''); setMessage(''); setStudent(null); if(!value.trim()) return setError('Enter your Roll No.'); setLoading(true); try{ setStudent(await api('/api/student/'+encodeURIComponent(value.trim()))); }catch(e){setError(e.message)}finally{setLoading(false)} }
+  async function load(value=roll){ setStudent(null); if(!value.trim()) return toast.error('Enter your Roll No.'); setLoading(true); try{ setStudent(await api('/api/student/'+encodeURIComponent(value.trim()))); }catch(e){toast.error(e.message)}finally{setLoading(false)} }
   async function submit(week,url){
-    setError(''); setMessage('');
-    if(!/^https:\/\/github\.com\/[^/\\s]+\/[^/\\s]+/i.test(url)) return setError('Enter a valid GitHub repository URL.');
-    setLoading(true); try{ setStudent(await api('/api/submissions',{method:'POST',body:JSON.stringify({rollNo:roll,week,url})})); setMessage(`Week ${week} submitted and is now pending admin review.`); }catch(e){setError(e.message)}finally{setLoading(false)}
+    if(!/^https:\/\/github\.com\/[^/\s]+\/[^/\s]+/i.test(url)) return toast.error('Enter a valid GitHub repository URL.');
+    setLoading(true); try{ setStudent(await api('/api/submissions',{method:'POST',body:JSON.stringify({rollNo:roll,week,url})})); toast.success(`Week ${week} submitted and is now pending admin review.`); }catch(e){toast.error(e.message)}finally{setLoading(false)}
   }
   return <div className="app-shell student-shell">
     <header className="top-nav glass"><div className="brand"><Logo/><div><b>Student Portal</b><small>12-week submission tracking</small></div></div><div className="nav-pill"><span className="live-dot"/> Live sheet sync</div></header>
@@ -41,7 +57,6 @@ function StudentPortal(){
         <div className="hero-copy"><span className="eyebrow">LEARNING PROGRESS</span><h1>Stay on top of every week.</h1><p>Enter your Roll No to see your submission history, missing work, and review status.</p></div>
         <div className="lookup glass-inner"><div className="input-wrap"><Icon><Search size={17}/></Icon><input value={roll} onChange={e=>{setRoll(e.target.value);setQuery(e.target.value)}} list="student-rolls" placeholder="Enter Roll No" onKeyDown={e=>e.key==='Enter'&&load()}/><datalist id="student-rolls">{students.map(x=><option key={x.rollNo} value={x.rollNo}>{x.name}</option>)}</datalist></div><button className="primary" onClick={()=>load()} disabled={loading}>{loading?'Loading…':'View progress'} <ArrowRight size={16}/></button></div>
         {query && !student && filtered.length>0 && <div className="suggestions">{filtered.map(x=><button key={x.rollNo} onClick={()=>{setRoll(x.rollNo);setQuery('');load(x.rollNo)}}><span>{x.name}</span><small>{x.rollNo}</small></button>)}</div>}
-        {error && <div className="alert error">{error}</div>}{message && <div className="alert success">{message}</div>}
         {!student && <div className="hero-highlights"><div><span><CheckCircle2 size={16}/></span><div><strong>Submission history</strong>Every week, tracked</div></div><div><span><Clock size={16}/></span><div><strong>Review status</strong>Know what's pending</div></div><div><span><AlertTriangle size={16}/></span><div><strong>Missing work</strong>Never miss a deadline</div></div></div>}
       </GlassCard>
       {student && <StudentDetails student={student} onSubmit={submit} />}
@@ -63,19 +78,19 @@ function StudentWeek({week,onSubmit}){
 }
 
 function Admin(){
-  const [key,setKey]=useState(''), [logged,setLogged]=useState(false), [data,setData]=useState(null), [tab,setTab]=useState('overview'), [error,setError]=useState(''), [loading,setLoading]=useState(false);
+  const [key,setKey]=useState(''), [logged,setLogged]=useState(false), [data,setData]=useState(null), [tab,setTab]=useState('overview'), [loading,setLoading]=useState(false);
   const [studentFilter,setStudentFilter]=useState('');
-  async function refresh(){ setLoading(true); setError(''); try{const headers={'x-admin-key':key}; const result=await api('/api/admin/analytics',{headers}); setData(result);setLogged(true);}catch(e){setError(e.message)}finally{setLoading(false)} }
-  async function review(row,action){ setLoading(true);setError('');try{await api('/api/admin/review',{method:'POST',headers:{'x-admin-key':key},body:JSON.stringify({row,action})});await refresh()}catch(e){setError(e.message)}finally{setLoading(false)} }
-  async function addStudent(payload){ setLoading(true);setError('');try{await api('/api/admin/students',{method:'POST',headers:{'x-admin-key':key},body:JSON.stringify(payload)});await refresh()}catch(e){setError(e.message);throw e}finally{setLoading(false)} }
-  if(!logged) return <div className="app-shell admin-login"><main className="container login-container"><GlassCard className="login-card"><div className="login-logo"><Logo/></div><span className="eyebrow">ADMIN CONSOLE</span><h1>Control center for submissions.</h1><p>Review student work, monitor weekly health, and manage the entire 12-week submission cycle.</p><div className="input-wrap large"><Icon><Search size={17}/></Icon><input type="password" value={key} onChange={e=>setKey(e.target.value)} placeholder="Enter admin key" onKeyDown={e=>e.key==='Enter'&&refresh()}/></div><button className="primary wide" onClick={refresh} disabled={loading}>{loading?'Connecting…':<>Open admin portal <ArrowRight size={16}/></>}</button>{error&&<div className="alert error">{error}</div>}</GlassCard></main></div>;
+  async function refresh(){ setLoading(true); try{const headers={'x-admin-key':key}; const result=await api('/api/admin/analytics',{headers}); setData(result);setLogged(true);}catch(e){toast.error(e.message)}finally{setLoading(false)} }
+  async function review(row,action){ setLoading(true);try{await api('/api/admin/review',{method:'POST',headers:{'x-admin-key':key},body:JSON.stringify({row,action})});await refresh();toast.success(`Submission ${action.toLowerCase()}d.`)}catch(e){toast.error(e.message)}finally{setLoading(false)} }
+  async function addStudent(payload){ setLoading(true);try{await api('/api/admin/students',{method:'POST',headers:{'x-admin-key':key},body:JSON.stringify(payload)});await refresh();toast.success(`${payload.name} added to the roster.`)}catch(e){toast.error(e.message);throw e}finally{setLoading(false)} }
+  if(!logged) return <div className="app-shell admin-login"><main className="container login-container"><GlassCard className="login-card"><div className="login-logo"><Logo/></div><span className="eyebrow">ADMIN CONSOLE</span><h1>Control center for submissions.</h1><p>Review student work, monitor weekly health, and manage the entire 12-week submission cycle.</p><div className="input-wrap large"><Icon><Search size={17}/></Icon><input type="password" value={key} onChange={e=>setKey(e.target.value)} placeholder="Enter admin key" onKeyDown={e=>e.key==='Enter'&&refresh()}/></div><button className="primary wide" onClick={refresh} disabled={loading}>{loading?'Connecting…':<>Open admin portal <ArrowRight size={16}/></>}</button></GlassCard></main></div>;
   const a=data?.summary||{};
   const tabIcons={overview:LayoutGrid,review:Clock,students:Users,analytics:BarChart3};
   const tabs=[['overview','Overview'],['review','Pending Review'],['students','Students'],['analytics','Analytics']];
   return <div className="app-shell admin-shell">
     <aside className="sidebar glass"><div className="brand"><Logo/><div><b>Admin Portal</b><small>Submission command center</small></div></div><nav>{tabs.map(([id,label])=>{const TabIcon=tabIcons[id];return <button className={tab===id?'active':''} key={id} onClick={()=>setTab(id)}><span><TabIcon size={16}/></span>{label}{id==='review'&&a.pending>0&&<em>{a.pending}</em>}</button>})}</nav><div className="side-footer"><div className="status-chip"><span className="live-dot"/> Google Sheets connected</div><button className="ghost" onClick={()=>{setLogged(false);setData(null)}}>Lock portal</button></div></aside>
     <div className="admin-content"><header className="top-nav admin-top glass"><div><span className="eyebrow">ADMIN / {tabs.find(x=>x[0]===tab)?.[1].toUpperCase()}</span><h2>{tabs.find(x=>x[0]===tab)?.[1]}</h2></div><div className="top-actions"><span className="sync">Last sync: {new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span><button className="secondary" onClick={refresh}><RefreshCw size={14}/> {loading?'Refreshing…':'Refresh'}</button></div></header>
-      <main className="container admin-container">{error&&<div className="alert error">{error}</div>}{tab==='overview'&&<Overview data={data} onReview={()=>setTab('review')}/>} {tab==='review'&&<Review data={data} review={review}/>} {tab==='students'&&<Students data={data} filter={studentFilter} setFilter={setStudentFilter} onAdd={addStudent}/>} {tab==='analytics'&&<Analytics data={data}/>}</main></div>
+      <main className="container admin-container">{tab==='overview'&&<Overview data={data} onReview={()=>setTab('review')}/>} {tab==='review'&&<Review data={data} review={review}/>} {tab==='students'&&<Students data={data} filter={studentFilter} setFilter={setStudentFilter} onAdd={addStudent}/>} {tab==='analytics'&&<Analytics data={data}/>}</main></div>
   </div>
 }
 
@@ -98,13 +113,12 @@ function Students({data,filter,setFilter,onAdd}){
   <GlassCard className="table-card"><div className="table-toolbar"><div><b>{rows.length} students</b><span>Live from Student Tracking</span></div><div className="input-wrap compact"><Icon><Search size={16}/></Icon><input value={filter} onChange={e=>setFilter(e.target.value)} placeholder="Search name or roll no"/></div></div><div className="table-scroll"><table><thead><tr><th>Rank</th><th>Student</th><th>Contact</th><th>Progress</th><th>Submitted</th><th>Missing</th><th>Pending</th><th>Status</th></tr></thead><tbody>{rows.map(r=><tr key={r.rollNo}><td><span className="rank">{r.rank}</span></td><td><div className="table-person"><div className="mini-avatar">{r.name?.slice(0,1)}</div><div><b>{r.name}</b><small>{r.rollNo} • {r.semester}</small></div></div></td><td><div className="contact-cell">{r.email&&<a href={`mailto:${r.email}`} title={r.email}><Mail size={13}/></a>}{r.githubProfile&&<a href={r.githubProfile} target="_blank" rel="noreferrer" title={r.githubProfile}><Code2 size={13}/></a>}</div></td><td><div className="progress-cell"><ProgressBar value={r.rate*100}/><strong>{pct(r.rate)}</strong></div></td><td>{r.submitted}</td><td><span className={r.missing?'number-red':''}>{r.missing}</span></td><td><span className={r.pending?'number-amber':''}>{r.pending}</span></td><td><Badge status={r.rate>=1?'Complete':r.missing>0?'Needs attention':'On track'}/></td></tr>)}</tbody></table></div></GlassCard></>}
 function AddStudentForm({onAdd,onDone}){
   const [form,setForm]=useState({rollNo:'',name:'',semester:'',email:'',githubProfile:''});
-  const [saving,setSaving]=useState(false), [err,setErr]=useState('');
+  const [saving,setSaving]=useState(false);
   const set=k=>e=>setForm(f=>({...f,[k]:e.target.value}));
   async function save(){
-    setErr('');
-    if(!form.rollNo.trim()||!form.name.trim()) return setErr('Roll No and name are required.');
+    if(!form.rollNo.trim()||!form.name.trim()) return toast.error('Roll No and name are required.');
     setSaving(true);
-    try{ await onAdd(form); onDone(); }catch(e){ setErr(e.message); }finally{ setSaving(false); }
+    try{ await onAdd(form); onDone(); }catch(e){ /* Admin.addStudent already toasts the failure */ }finally{ setSaving(false); }
   }
   return <GlassCard className="table-card add-student-form">
     <div className="section-head"><div><span className="eyebrow">NEW STUDENT</span><h3>Add to the roster</h3></div></div>
@@ -115,12 +129,11 @@ function AddStudentForm({onAdd,onDone}){
       <div className="input-wrap"><input value={form.email} onChange={set('email')} placeholder="Email (optional)"/></div>
       <div className="input-wrap"><input value={form.githubProfile} onChange={set('githubProfile')} placeholder="GitHub profile (optional)"/></div>
     </div>
-    {err&&<div className="alert error">{err}</div>}
     <button className="primary" onClick={save} disabled={saving}>{saving?'Adding…':<>Add student <UserPlus size={16}/></>}</button>
   </GlassCard>
 }
 function Analytics({data}){const s=data.summary;return <><div className="page-intro"><div><span className="eyebrow">DEEP ANALYTICS</span><h1>Understand the whole cohort.</h1><p>Weekly trends, completion distribution, missing-work load and submission queue.</p></div></div><div className="stats-grid admin-stats"><Stat label="Average completion" value={pct(s.averageRate)} meta="Across active weeks" icon={BarChart3} tone="accent"/><Stat label="Students needing attention" value={s.studentsWithMissing} meta="At least one missing week" icon={AlertTriangle} tone="red"/><Stat label="Pending submissions" value={s.pending} meta="Need review" icon={Clock} tone="amber"/><Stat label="Perfect students" value={s.studentsAt100} meta="100% approved" icon={Star} tone="green"/></div><div className="dashboard-grid"><GlassCard className="panel"><div className="section-head"><div><span className="eyebrow">WEEK-BY-WEEK</span><h3>Detailed submission rates</h3></div></div><div className="analytics-weeks">{data.weekly.map(w=><div className="analytics-week" key={w.week}><div><b>Week {w.week}</b><span>{w.submitted} submitted • {w.missing} missing • {w.pending} pending</span></div><strong>{pct(w.rate)}</strong><ProgressBar value={w.rate*100}/></div>)}</div></GlassCard><GlassCard className="panel"><div className="section-head"><div><span className="eyebrow">DISTRIBUTION</span><h3>Student completion bands</h3></div></div><div className="distribution">{data.distribution.map(d=><div className="distribution-row" key={d.label}><div><span>{d.label}</span><b>{d.count}</b></div><ProgressBar value={s.students?d.count/s.students*100:0}/></div>)}</div></GlassCard></div></>}
 function Empty({text}){return <div className="empty"><div><Sparkles size={22}/></div><p>{text}</p></div>}
 
-function App(){ return location.pathname.startsWith('/admin')?<Admin/>:<StudentPortal/>; }
+function App(){ return <>{location.pathname.startsWith('/admin')?<Admin/>:<StudentPortal/>}<Toasts/></>; }
 createRoot(document.getElementById('root')).render(<App/>);

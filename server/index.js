@@ -470,7 +470,7 @@ app.post("/api/submissions", async (req, res) => {
 
     const githubUrl = String(url || "").trim();
 
-    if (!/^https:\/\/github\.com\/[^/\\s]+\/[^/\\s]+/i.test(githubUrl)) {
+    if (!/^https:\/\/github\.com\/[^/\s]+\/[^/\s]+/i.test(githubUrl)) {
       throw new Error("Enter a valid GitHub repository URL.");
     }
 
@@ -518,9 +518,19 @@ app.post("/api/submissions", async (req, res) => {
       `${cfg.submissions}!A${cfg.submissionStart}:A${cfg.submissionEnd}`,
     );
 
-    const emptyIndex = submissionRows.findIndex((row) => !row[0]);
+    /*
+        The Sheets API omits trailing rows that have
+        no content, so a short array also means the
+        rows after it are empty and available.
+      */
+
+    let emptyIndex = submissionRows.findIndex((row) => !row[0]);
 
     if (emptyIndex < 0) {
+      emptyIndex = submissionRows.length;
+    }
+
+    if (cfg.submissionStart + emptyIndex > cfg.submissionEnd) {
       throw new Error("Submission table is full.");
     }
 
