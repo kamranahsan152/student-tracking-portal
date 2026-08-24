@@ -58,29 +58,46 @@ function StudentPortal(){
         <div className="lookup glass-inner"><div className="input-wrap"><Icon><Search size={17}/></Icon><input value={roll} onChange={e=>setRoll(e.target.value)} placeholder="Enter Roll No" onKeyDown={e=>e.key==='Enter'&&load()}/></div><button className="primary" onClick={()=>load()} disabled={loading}>{loading?'Loading…':'View progress'} <ArrowRight size={16}/></button></div>
         {!student && <div className="hero-highlights"><div><span><CheckCircle2 size={16}/></span><div><strong>Submission history</strong>Every week, tracked</div></div><div><span><Clock size={16}/></span><div><strong>Review status</strong>Know what's pending</div></div><div><span><AlertTriangle size={16}/></span><div><strong>Missing work</strong>Never miss a deadline</div></div></div>}
       </GlassCard>
-      {student && <StudentDetails student={student} onSubmit={submit} onSaveEmail={saveEmail} />}
+      {student && (student.email
+        ? <StudentDetails student={student} onSubmit={submit} />
+        : <EmailGate student={student} onSave={saveEmail} loading={loading}/>)}
     </main>
   </div>
 }
 
-function StudentDetails({student,onSubmit,onSaveEmail}){
+function EmailGate({student,onSave,loading}){
+  const [value,setValue]=useState('');
+  const [error,setError]=useState('');
+  function save(){
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)){ const msg='Enter a valid email address.'; setError(msg); return toast.error(msg); }
+    if(/@uog\.edu\.pk$/i.test(value.trim())){ const msg='Please add your personal email, not your university email.'; setError(msg); return toast.error(msg); }
+    setError('');
+    onSave(value);
+  }
+  return <GlassCard className="hero student-hero gate-card">
+    <div className="hero-copy">
+      <span className="eyebrow">ONE LAST STEP</span>
+      <h1>Hi {student.name}, verify your email.</h1>
+      <p>Before you can see your progress, add the email you check regularly. You'll get a message here whenever a week is approved or rejected.</p>
+    </div>
+    <div className="lookup glass-inner"><div className={`input-wrap ${error?'has-error':''}`}><Icon><Mail size={17}/></Icon><input type="email" autoFocus value={value} onChange={e=>{setValue(e.target.value);setError('')}} placeholder="you@gmail.com" onKeyDown={e=>e.key==='Enter'&&save()}/></div><button className="primary" onClick={save} disabled={loading}>{loading?'Saving…':'Verify & continue'} <ArrowRight size={16}/></button></div>
+    {error && <p className="field-error">{error}</p>}
+    <div className="hero-highlights"><div><span><AlertTriangle size={16}/></span><div><strong>Use your personal email</strong>Not your university email</div></div><div><span><CheckCircle2 size={16}/></span><div><strong>One-time step</strong>You won't be asked again</div></div></div>
+  </GlassCard>
+}
+
+function StudentDetails({student,onSubmit}){
   const submitted=student.submitted, missing=student.missing, pending=student.pending;
   return <>
     <GlassCard className="profile-card"><div className="avatar">{student.name?.slice(0,1)?.toUpperCase()||'S'}</div><div className="profile-main"><span className="eyebrow">STUDENT PROFILE</span><h2>{student.name}</h2><p>{student.rollNo} <span>•</span> {student.semester || 'Student'}</p></div><div className="profile-side"><span>Current progress</span><strong>{pct(student.submissionPercent)}</strong><ProgressBar value={student.submissionPercent*100}/></div></GlassCard>
-    <EmailPrompt email={student.email} onSave={onSaveEmail}/>
+    <EmailBadge email={student.email}/>
     <div className="stats-grid"><Stat label="Submitted" value={submitted} meta={`of ${student.activeWeeks} active weeks`} icon={CheckCircle2} tone="green"/><Stat label="Missing" value={missing} meta="Needs your attention" icon={AlertTriangle} tone="red"/><Stat label="Pending" value={pending} meta="Waiting for review" icon={Clock} tone="amber"/><Stat label="Completion" value={pct(student.submissionPercent)} meta="Approved submissions" icon={TrendingUp} tone="accent"/></div>
     <GlassCard className="weekly-card"><div className="section-head"><div><span className="eyebrow">WEEKLY TRACKER</span><h3>Your 12-week journey</h3></div><span className="active-weeks">{student.activeWeeks} active weeks</span></div><div className="week-list">{student.weeks.map(w=><StudentWeek key={w.week} week={w} onSubmit={onSubmit}/>)}</div></GlassCard>
   </>
 }
 
-function EmailPrompt({email,onSave}){
-  const [value,setValue]=useState('');
-  if(email) return <GlassCard className="email-card"><Icon><Mail size={16}/></Icon><span>Progress emails go to <b>{email}</b></span></GlassCard>;
-  function save(){
-    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return toast.error('Enter a valid email address.');
-    onSave(value);
-  }
-  return <GlassCard className="email-card"><Icon><Mail size={16}/></Icon><div className="email-copy"><b>Please add your email to get progress of your submission.</b><small>Use your personal email, not your university email.</small></div><div className="email-form"><input type="email" value={value} onChange={e=>setValue(e.target.value)} placeholder="you@gmail.com" onKeyDown={e=>e.key==='Enter'&&save()}/><button className="primary" onClick={save}>Save</button></div></GlassCard>;
+function EmailBadge({email}){
+  return <GlassCard className="email-card"><Icon><Mail size={16}/></Icon><span>Progress emails go to <b>{email}</b></span></GlassCard>;
 }
 function StudentWeek({week,onSubmit}){
   const [url,setUrl]=useState('');

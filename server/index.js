@@ -279,6 +279,21 @@ async function get(range) {
   return response.data.values || [];
 }
 
+/*
+    Fetches several independent ranges in one HTTP round-trip
+    instead of one request per range (Sheets API round-trips
+    are the slow part, not the read itself).
+*/
+
+async function batchGet(ranges) {
+  const response = await getSheets().spreadsheets.values.batchGet({
+    spreadsheetId: getSpreadsheetId(),
+    ranges,
+  });
+
+  return response.data.valueRanges.map((vr) => vr.values || []);
+}
+
 async function update(range, values) {
   return getSheets().spreadsheets.values.update({
     spreadsheetId: getSpreadsheetId(),
@@ -449,7 +464,30 @@ async function submissions() {
 ========================================================= */
 
 async function getStudent(rollNo) {
-  const allStudents = await students();
+  /*
+      Students, Student Tracking, Dashboard (active weeks) and
+      Submissions don't depend on each other, so they're fetched
+      in one Sheets API round-trip instead of four sequential
+      ones — each round-trip is the slow part, not the read.
+  */
+
+  const [studentRows, trackingRows, dashboardRows, submissionRows] =
+    await batchGet([
+      `${cfg.students}!A${cfg.studentStart}:L${cfg.studentEnd}`,
+      `${cfg.tracking}!A${cfg.trackingStart}:AK${cfg.trackingEnd}`,
+      `${cfg.dashboard}!B4`,
+      `${cfg.submissions}!A${cfg.submissionStart}:E${cfg.submissionEnd}`,
+    ]);
+
+  const allStudents = studentRows
+    .filter((row) => row[0])
+    .map((row) => ({
+      rollNo: String(row[0]).trim(),
+      name: row[1] || "",
+      semester: row[2] || "",
+      email: row[3] || "",
+      githubProfile: row[4] || "",
+    }));
 
   const student = allStudents.find(
     (item) => norm(item.rollNo) === norm(rollNo),
@@ -459,19 +497,41 @@ async function getStudent(rollNo) {
     throw new Error("Roll No not found.");
   }
 
-  const trackingRows = await get(
-    `${cfg.tracking}!A${cfg.trackingStart}:AK${cfg.trackingEnd}`,
-  );
-
   const trackingRow = trackingRows.find((row) => norm(row[0]) === norm(rollNo));
 
   if (!trackingRow) {
     throw new Error("Student tracking row not found.");
   }
 
-  const weeksN = await activeWeeks();
+  const activeWeeksValue = Number(dashboardRows[0]?.[0]);
+  const weeksN =
+    Number.isFinite(activeWeeksValue) && activeWeeksValue > 0
+      ? Math.min(12, Math.floor(activeWeeksValue))
+      : 12;
 
-  const allSubmissions = await submissions();
+  const allSubmissions = submissionRows.length
+    ? await (async () => {
+        const adminEnd = cfg.adminStart + submissionRows.length - 1;
+        const actions = await get(`${cfg.admin}!G${cfg.adminStart}:G${adminEnd}`);
+
+        return submissionRows
+          .map((row, index) => {
+            if (!row[0]) {
+              return null;
+            }
+
+            return {
+              row: cfg.submissionStart + index,
+              rollNo: String(row[0]).trim(),
+              week: Number(row[1]),
+              url: row[2] || "",
+              submittedOn: row[3] || "",
+              action: String(actions[index]?.[0] || "").trim(),
+            };
+          })
+          .filter(Boolean);
+      })()
+    : [];
 
   const studentSubmissions = allSubmissions.filter(
     (item) => norm(item.rollNo) === norm(rollNo),
@@ -626,6 +686,12 @@ app.post("/api/student/:roll/email", async (req, res) => {
 
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       throw new Error("Enter a valid email address.");
+    }
+
+    if (/@uog\.edu\.pk$/i.test(email)) {
+      throw new Error(
+        "Please add your personal email, not your university email.",
+      );
     }
 
     const existing = await students();
