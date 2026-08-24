@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import React, { useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Sparkles, Search, CheckCircle2, Clock, AlertTriangle, TrendingUp, LayoutGrid, Users, BarChart3, Star, RefreshCw, ArrowRight, ExternalLink, Mail, Code2, UserPlus, X, Pencil, Trash2 } from 'lucide-react';
 import './styles.css';
@@ -40,11 +40,8 @@ function Badge({status}){ return <span className={`badge ${String(status).toLowe
 function ProgressBar({value}){ return <div className="progress"><i style={{width:`${Math.max(0,Math.min(100,Number(value||0)))}%`}}/></div>; }
 
 function StudentPortal(){
-  const [students,setStudents]=useState([]), [roll,setRoll]=useState(''), [student,setStudent]=useState(null);
+  const [roll,setRoll]=useState(''), [student,setStudent]=useState(null);
   const [loading,setLoading]=useState(false);
-  const [query,setQuery]=useState('');
-  useEffect(()=>{ api('/api/students').then(setStudents).catch(e=>toast.error(e.message)); },[]);
-  const filtered = useMemo(()=>students.filter(x=>`${x.rollNo} ${x.name}`.toLowerCase().includes(query.toLowerCase())).slice(0,8),[students,query]);
   async function load(value=roll){ setStudent(null); if(!value.trim()) return toast.error('Enter your Roll No.'); setLoading(true); try{ setStudent(await api('/api/student/'+encodeURIComponent(value.trim()))); }catch(e){toast.error(e.message)}finally{setLoading(false)} }
   async function submit(week,url){
     if(!/^https:\/\/github\.com\/[^/\s]+\/[^/\s]+/i.test(url)) return toast.error('Enter a valid GitHub repository URL.');
@@ -55,8 +52,7 @@ function StudentPortal(){
     <main className="container">
       <GlassCard className="hero student-hero">
         <div className="hero-copy"><span className="eyebrow">LEARNING PROGRESS</span><h1>Stay on top of every week.</h1><p>Enter your Roll No to see your submission history, missing work, and review status.</p></div>
-        <div className="lookup glass-inner"><div className="input-wrap"><Icon><Search size={17}/></Icon><input value={roll} onChange={e=>{setRoll(e.target.value);setQuery(e.target.value)}} list="student-rolls" placeholder="Enter Roll No" onKeyDown={e=>e.key==='Enter'&&load()}/><datalist id="student-rolls">{students.map(x=><option key={x.rollNo} value={x.rollNo}>{x.name}</option>)}</datalist></div><button className="primary" onClick={()=>load()} disabled={loading}>{loading?'Loading…':'View progress'} <ArrowRight size={16}/></button></div>
-        {query && !student && filtered.length>0 && <div className="suggestions">{filtered.map(x=><button key={x.rollNo} onClick={()=>{setRoll(x.rollNo);setQuery('');load(x.rollNo)}}><span>{x.name}</span><small>{x.rollNo}</small></button>)}</div>}
+        <div className="lookup glass-inner"><div className="input-wrap"><Icon><Search size={17}/></Icon><input value={roll} onChange={e=>setRoll(e.target.value)} placeholder="Enter Roll No" onKeyDown={e=>e.key==='Enter'&&load()}/></div><button className="primary" onClick={()=>load()} disabled={loading}>{loading?'Loading…':'View progress'} <ArrowRight size={16}/></button></div>
         {!student && <div className="hero-highlights"><div><span><CheckCircle2 size={16}/></span><div><strong>Submission history</strong>Every week, tracked</div></div><div><span><Clock size={16}/></span><div><strong>Review status</strong>Know what's pending</div></div><div><span><AlertTriangle size={16}/></span><div><strong>Missing work</strong>Never miss a deadline</div></div></div>}
       </GlassCard>
       {student && <StudentDetails student={student} onSubmit={submit} />}

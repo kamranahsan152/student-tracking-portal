@@ -474,22 +474,6 @@ function adminAuth(req, res, next) {
 ========================================================= */
 
 /*
-   Get student list
-*/
-
-app.get("/api/students", async (req, res) => {
-  try {
-    res.json(await students());
-  } catch (error) {
-    console.error("GET /api/students:", error);
-
-    res.status(500).json({
-      error: error.message,
-    });
-  }
-});
-
-/*
    Get student progress
 */
 
