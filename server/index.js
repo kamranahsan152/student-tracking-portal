@@ -3,6 +3,7 @@ import cors from "cors";
 import helmet from "helmet";
 import dotenv from "dotenv";
 import { google } from "googleapis";
+import nodemailer from "nodemailer";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -141,6 +142,128 @@ function getSpreadsheetId() {
   }
 
   return process.env.GOOGLE_SHEET_ID.trim();
+}
+
+/* =========================================================
+   EMAIL
+========================================================= */
+
+let mailer = null;
+
+function getMailer() {
+  if (mailer) {
+    return mailer;
+  }
+
+  const { GMAIL_USER, GMAIL_APP_PASSWORD } = process.env;
+
+  if (!GMAIL_USER || !GMAIL_APP_PASSWORD) {
+    return null;
+  }
+
+  mailer = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: GMAIL_USER,
+      pass: GMAIL_APP_PASSWORD,
+    },
+  });
+
+  return mailer;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(
+    /[&<>"']/g,
+    (ch) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      })[ch],
+  );
+}
+
+function reviewEmailHtml({ name, rollNo, week, approved }) {
+  const statusColor = approved ? "#1d8c49" : "#b42318";
+  const statusBg = approved ? "rgba(48,209,88,.12)" : "rgba(255,59,48,.1)";
+  const statusLabel = approved ? "Approved" : "Rejected";
+  const headerGradient = approved
+    ? "linear-gradient(135deg,#30d158,#1d8c49)"
+    : "linear-gradient(135deg,#ff453a,#b42318)";
+  const headline = approved
+    ? "Your submission has been approved"
+    : "Your submission has been rejected";
+  const message = approved
+    ? "Great work — this week is now marked <b>Submitted</b> in your tracker."
+    : "This week has been returned to <b>Missing</b>. Please review the feedback from your admin and resubmit when ready.";
+
+  return `
+<div style="background:#f5f5f7;padding:32px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,sans-serif;color:#111113">
+  <div style="max-width:520px;margin:0 auto;background:#ffffff;border-radius:24px;overflow:hidden;box-shadow:0 18px 60px rgba(0,0,0,.08)">
+    <div style="background:${headerGradient};padding:28px 32px;color:#ffffff">
+      <div style="font-size:12px;font-weight:800;letter-spacing:.13em;opacity:.85;text-transform:uppercase">Student Portal</div>
+      <div style="font-size:22px;font-weight:800;margin-top:6px;letter-spacing:-.02em">${headline}</div>
+    </div>
+    <div style="padding:32px">
+      <p style="margin:0 0 18px;font-size:14px;color:#6b6b73">Hi <b style="color:#111113">${escapeHtml(name)}</b>,</p>
+      <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#111113">${message}</p>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;background:#f5f5f7;border-radius:16px;overflow:hidden">
+        <tr>
+          <td style="padding:14px 18px;color:#6b6b73;border-bottom:1px solid rgba(0,0,0,.06)">Roll No</td>
+          <td style="padding:14px 18px;text-align:right;font-weight:700;border-bottom:1px solid rgba(0,0,0,.06)">${escapeHtml(rollNo)}</td>
+        </tr>
+        <tr>
+          <td style="padding:14px 18px;color:#6b6b73;border-bottom:1px solid rgba(0,0,0,.06)">Name</td>
+          <td style="padding:14px 18px;text-align:right;font-weight:700;border-bottom:1px solid rgba(0,0,0,.06)">${escapeHtml(name)}</td>
+        </tr>
+        <tr>
+          <td style="padding:14px 18px;color:#6b6b73;border-bottom:1px solid rgba(0,0,0,.06)">Week</td>
+          <td style="padding:14px 18px;text-align:right;font-weight:700;border-bottom:1px solid rgba(0,0,0,.06)">Week ${week}</td>
+        </tr>
+        <tr>
+          <td style="padding:14px 18px;color:#6b6b73">Status</td>
+          <td style="padding:14px 18px;text-align:right">
+            <span style="display:inline-block;padding:5px 12px;border-radius:999px;font-weight:800;font-size:11px;color:${statusColor};background:${statusBg}">${statusLabel}</span>
+          </td>
+        </tr>
+      </table>
+      <p style="margin:26px 0 0;font-size:13px;line-height:1.6;color:#6b6b73">Log in to the Student Portal anytime to view your full 12-week progress.</p>
+      <p style="margin:22px 0 0;font-size:13px;line-height:1.6;color:#111113">Regards,<br/><b>Kamran Ahsan</b></p>
+    </div>
+  </div>
+</div>`;
+}
+
+async function sendReviewEmail({ to, name, rollNo, week, action }) {
+  const transport = getMailer();
+
+  if (!transport || !to) {
+    return;
+  }
+
+  const approved = action === "Approve";
+  const subject = approved
+    ? `Week ${week} submission approved`
+    : `Week ${week} submission rejected`;
+
+  const text = approved
+    ? `Hi ${name},\n\nYour Week ${week} submission (Roll No ${rollNo}) has been approved and is now marked Submitted.\n\nRegards,\nKamran Ahsan`
+    : `Hi ${name},\n\nYour Week ${week} submission (Roll No ${rollNo}) has been rejected and the week is now marked Missing. Please review and resubmit.\n\nRegards,\nKamran Ahsan`;
+
+  try {
+    await transport.sendMail({
+      from: process.env.GMAIL_USER,
+      to,
+      subject,
+      text,
+      html: reviewEmailHtml({ name, rollNo, week, approved }),
+    });
+  } catch (error) {
+    console.error("sendReviewEmail:", error.message);
+  }
 }
 
 /* =========================================================
@@ -492,6 +615,48 @@ app.get("/api/student/:roll", async (req, res) => {
 });
 
 /*
+   Student adds their personal email (once).
+   Only writes the Email cell — cannot touch name/semester/github,
+   and refuses to overwrite an email that's already set.
+*/
+
+app.post("/api/student/:roll/email", async (req, res) => {
+  try {
+    const email = String(req.body?.email || "").trim();
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      throw new Error("Enter a valid email address.");
+    }
+
+    const existing = await students();
+
+    const index = existing.findIndex(
+      (student) => norm(student.rollNo) === norm(req.params.roll),
+    );
+
+    if (index < 0) {
+      throw new Error("Roll No not found.");
+    }
+
+    if (existing[index].email) {
+      throw new Error("Email is already set for this student.");
+    }
+
+    const studentRow = cfg.studentStart + index;
+
+    await update(`${cfg.students}!D${studentRow}`, [[email]]);
+
+    res.json({ ok: true, email });
+  } catch (error) {
+    console.error("POST /api/student/:roll/email:", error);
+
+    res.status(400).json({
+      error: error.message,
+    });
+  }
+});
+
+/*
    Student submits GitHub repository
 */
 
@@ -826,7 +991,68 @@ app.delete("/api/admin/students/:roll", adminAuth, async (req, res) => {
       },
     });
 
-    res.json({ ok: true, rollNo: existing[index].rollNo });
+    /*
+        Submissions rows aren't positionally tied to the student
+        row (any student can land in any free row), so deleted
+        students' submissions are found by roll no and cleared —
+        their Admin Review mirror rows go blank automatically.
+      */
+
+    const deletedRoll = existing[index].rollNo;
+
+    const submissionRows = await get(
+      `${cfg.submissions}!A${cfg.submissionStart}:A${cfg.submissionEnd}`,
+    );
+
+    const matches = [];
+    submissionRows.forEach((row, i) => {
+      if (norm(row[0]) === norm(deletedRoll)) {
+        matches.push(cfg.submissionStart + i);
+      }
+    });
+
+    if (matches.length) {
+      const submissionsSheetId = await getSheetId(cfg.submissions);
+      const adminSheetId = await getSheetId(cfg.admin);
+
+      const requests = [];
+      for (const sheetRow of matches) {
+        const adminRow = cfg.adminStart + (sheetRow - cfg.submissionStart);
+
+        requests.push({
+          updateCells: {
+            range: {
+              sheetId: submissionsSheetId,
+              startRowIndex: sheetRow - 1,
+              endRowIndex: sheetRow,
+              startColumnIndex: 0,
+              endColumnIndex: 4,
+            },
+            fields: "userEnteredValue",
+          },
+        });
+
+        requests.push({
+          updateCells: {
+            range: {
+              sheetId: adminSheetId,
+              startRowIndex: adminRow - 1,
+              endRowIndex: adminRow,
+              startColumnIndex: 6,
+              endColumnIndex: 7,
+            },
+            fields: "userEnteredValue",
+          },
+        });
+      }
+
+      await getSheets().spreadsheets.batchUpdate({
+        spreadsheetId: getSpreadsheetId(),
+        requestBody: { requests },
+      });
+    }
+
+    res.json({ ok: true, rollNo: deletedRoll, clearedSubmissions: matches.length });
   } catch (error) {
     console.error("DELETE /api/admin/students:", error);
 
@@ -1039,6 +1265,21 @@ app.post("/api/admin/review", adminAuth, async (req, res) => {
         await update(`${cfg.tracking}!${weekCol}${trackingRow}`, [
           [action === "Approve" ? "Submitted" : "Missing"],
         ]);
+      }
+
+      const allStudents = await students();
+      const student = allStudents.find(
+        (item) => norm(item.rollNo) === norm(rollNo),
+      );
+
+      if (student?.email) {
+        await sendReviewEmail({
+          to: student.email,
+          name: student.name,
+          rollNo: student.rollNo,
+          week,
+          action,
+        });
       }
     }
 

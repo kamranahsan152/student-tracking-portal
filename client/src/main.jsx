@@ -47,6 +47,9 @@ function StudentPortal(){
     if(!/^https:\/\/github\.com\/[^/\s]+\/[^/\s]+/i.test(url)) return toast.error('Enter a valid GitHub repository URL.');
     setLoading(true); try{ setStudent(await api('/api/submissions',{method:'POST',body:JSON.stringify({rollNo:roll,week,url})})); toast.success(`Week ${week} submitted and is now pending admin review.`); }catch(e){toast.error(e.message)}finally{setLoading(false)}
   }
+  async function saveEmail(email){
+    setLoading(true); try{ await api(`/api/student/${encodeURIComponent(roll)}/email`,{method:'POST',body:JSON.stringify({email})}); setStudent(s=>({...s,email})); toast.success('Email saved. You will get an email when a week is reviewed.'); }catch(e){toast.error(e.message)}finally{setLoading(false)}
+  }
   return <div className="app-shell student-shell">
     <header className="top-nav glass"><div className="brand"><Logo/><div><b>Student Portal</b><small>12-week submission tracking</small></div></div><div className="nav-pill"><span className="live-dot"/> Live sheet sync</div></header>
     <main className="container">
@@ -55,18 +58,29 @@ function StudentPortal(){
         <div className="lookup glass-inner"><div className="input-wrap"><Icon><Search size={17}/></Icon><input value={roll} onChange={e=>setRoll(e.target.value)} placeholder="Enter Roll No" onKeyDown={e=>e.key==='Enter'&&load()}/></div><button className="primary" onClick={()=>load()} disabled={loading}>{loading?'Loading…':'View progress'} <ArrowRight size={16}/></button></div>
         {!student && <div className="hero-highlights"><div><span><CheckCircle2 size={16}/></span><div><strong>Submission history</strong>Every week, tracked</div></div><div><span><Clock size={16}/></span><div><strong>Review status</strong>Know what's pending</div></div><div><span><AlertTriangle size={16}/></span><div><strong>Missing work</strong>Never miss a deadline</div></div></div>}
       </GlassCard>
-      {student && <StudentDetails student={student} onSubmit={submit} />}
+      {student && <StudentDetails student={student} onSubmit={submit} onSaveEmail={saveEmail} />}
     </main>
   </div>
 }
 
-function StudentDetails({student,onSubmit}){
+function StudentDetails({student,onSubmit,onSaveEmail}){
   const submitted=student.submitted, missing=student.missing, pending=student.pending;
   return <>
     <GlassCard className="profile-card"><div className="avatar">{student.name?.slice(0,1)?.toUpperCase()||'S'}</div><div className="profile-main"><span className="eyebrow">STUDENT PROFILE</span><h2>{student.name}</h2><p>{student.rollNo} <span>•</span> {student.semester || 'Student'}</p></div><div className="profile-side"><span>Current progress</span><strong>{pct(student.submissionPercent)}</strong><ProgressBar value={student.submissionPercent*100}/></div></GlassCard>
+    <EmailPrompt email={student.email} onSave={onSaveEmail}/>
     <div className="stats-grid"><Stat label="Submitted" value={submitted} meta={`of ${student.activeWeeks} active weeks`} icon={CheckCircle2} tone="green"/><Stat label="Missing" value={missing} meta="Needs your attention" icon={AlertTriangle} tone="red"/><Stat label="Pending" value={pending} meta="Waiting for review" icon={Clock} tone="amber"/><Stat label="Completion" value={pct(student.submissionPercent)} meta="Approved submissions" icon={TrendingUp} tone="accent"/></div>
     <GlassCard className="weekly-card"><div className="section-head"><div><span className="eyebrow">WEEKLY TRACKER</span><h3>Your 12-week journey</h3></div><span className="active-weeks">{student.activeWeeks} active weeks</span></div><div className="week-list">{student.weeks.map(w=><StudentWeek key={w.week} week={w} onSubmit={onSubmit}/>)}</div></GlassCard>
   </>
+}
+
+function EmailPrompt({email,onSave}){
+  const [value,setValue]=useState('');
+  if(email) return <GlassCard className="email-card"><Icon><Mail size={16}/></Icon><span>Progress emails go to <b>{email}</b></span></GlassCard>;
+  function save(){
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return toast.error('Enter a valid email address.');
+    onSave(value);
+  }
+  return <GlassCard className="email-card"><Icon><Mail size={16}/></Icon><div className="email-copy"><b>Please add your email to get progress of your submission.</b><small>Use your personal email, not your university email.</small></div><div className="email-form"><input type="email" value={value} onChange={e=>setValue(e.target.value)} placeholder="you@gmail.com" onKeyDown={e=>e.key==='Enter'&&save()}/><button className="primary" onClick={save}>Save</button></div></GlassCard>;
 }
 function StudentWeek({week,onSubmit}){
   const [url,setUrl]=useState('');

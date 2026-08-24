@@ -1,4 +1,12 @@
 {
-  "name":"portal-server","private":true,"type":"module",
-  "dependencies":{"express":"^5.1.0","cors":"^2.8.5","googleapis":"^159.0.0","helmet":"^8.1.0"}
+  "name": "portal-server",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "googleapis": "^159.0.0",
+    "helmet": "^8.1.0",
+    "nodemailer": "^9.0.5"
+  }
 }
