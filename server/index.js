@@ -1010,6 +1010,38 @@ app.post("/api/admin/review", adminAuth, async (req, res) => {
 
     await update(`${cfg.admin}!G${adminRow}`, [[action]]);
 
+    /*
+        Mirror the decision into Student Tracking's manual
+        Week columns (D:O), so the "source of truth" grid
+        matches the live columns without the admin having to
+        retype it. D = Week 1 ... O = Week 12.
+      */
+
+    const [rollNo, weekRaw] = (
+      await get(`${cfg.submissions}!A${sheetRow}:B${sheetRow}`)
+    )[0] || [];
+
+    const week = Number(weekRaw);
+
+    if (rollNo && Number.isInteger(week) && week >= 1 && week <= 12) {
+      const trackingRows = await get(
+        `${cfg.tracking}!A${cfg.trackingStart}:A${cfg.trackingEnd}`,
+      );
+
+      const trackingIndex = trackingRows.findIndex(
+        (row) => norm(row[0]) === norm(rollNo),
+      );
+
+      if (trackingIndex !== -1) {
+        const trackingRow = cfg.trackingStart + trackingIndex;
+        const weekCol = String.fromCharCode("D".charCodeAt(0) + week - 1);
+
+        await update(`${cfg.tracking}!${weekCol}${trackingRow}`, [
+          [action === "Approve" ? "Submitted" : "Missing"],
+        ]);
+      }
+    }
+
     res.json({
       ok: true,
       action,
