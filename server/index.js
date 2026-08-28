@@ -186,19 +186,23 @@ function escapeHtml(value) {
   );
 }
 
-function reviewEmailHtml({ name, rollNo, week, approved }) {
+function reviewEmailHtml({ name, rollNo, week, approved, reapproved }) {
   const statusColor = approved ? "#1d8c49" : "#b42318";
   const statusBg = approved ? "rgba(48,209,88,.12)" : "rgba(255,59,48,.1)";
-  const statusLabel = approved ? "Approved" : "Rejected";
+  const statusLabel = reapproved ? "Approved after review" : approved ? "Approved" : "Rejected";
   const headerGradient = approved
     ? "linear-gradient(135deg,#30d158,#1d8c49)"
     : "linear-gradient(135deg,#ff453a,#b42318)";
-  const headline = approved
-    ? "Your submission has been approved"
-    : "Your submission has been rejected";
-  const message = approved
-    ? "Great work — this week is now marked <b>Submitted</b> in your tracker."
-    : "This week has been returned to <b>Missing</b>. Please review the feedback from your admin and resubmit when ready.";
+  const headline = reapproved
+    ? "Your rejected submission is now approved"
+    : approved
+      ? "Your submission has been approved"
+      : "Your submission has been rejected";
+  const message = reapproved
+    ? "This week was rejected earlier, but your admin has reviewed it again and <b>approved</b> it. No resubmission is needed — the week is now marked <b>Submitted</b> in your tracker."
+    : approved
+      ? "Great work — this week is now marked <b>Submitted</b> in your tracker."
+      : "This week has been returned to <b>Missing</b>. Please review the feedback from your admin and resubmit when ready.";
 
   return `
 <div style="background:#f5f5f7;padding:32px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,sans-serif;color:#111113">
@@ -237,7 +241,7 @@ function reviewEmailHtml({ name, rollNo, week, approved }) {
 </div>`;
 }
 
-async function sendReviewEmail({ to, name, rollNo, week, action }) {
+async function sendReviewEmail({ to, name, rollNo, week, action, reapproved }) {
   const transport = getMailer();
 
   if (!transport || !to) {
@@ -245,13 +249,17 @@ async function sendReviewEmail({ to, name, rollNo, week, action }) {
   }
 
   const approved = action === "Approve";
-  const subject = approved
-    ? `Week ${week} submission approved`
-    : `Week ${week} submission rejected`;
+  const subject = reapproved
+    ? `Week ${week} submission approved after re-review`
+    : approved
+      ? `Week ${week} submission approved`
+      : `Week ${week} submission rejected`;
 
-  const text = approved
-    ? `Hi ${name},\n\nYour Week ${week} submission (Roll No ${rollNo}) has been approved and is now marked Submitted.\n\nRegards,\nKamran Ahsan`
-    : `Hi ${name},\n\nYour Week ${week} submission (Roll No ${rollNo}) has been rejected and the week is now marked Missing. Please review and resubmit.\n\nRegards,\nKamran Ahsan`;
+  const text = reapproved
+    ? `Hi ${name},\n\nYour Week ${week} submission (Roll No ${rollNo}) was rejected earlier, but your admin has reviewed it again and approved it. You do not need to resubmit — the week is now marked Submitted.\n\nRegards,\nKamran Ahsan`
+    : approved
+      ? `Hi ${name},\n\nYour Week ${week} submission (Roll No ${rollNo}) has been approved and is now marked Submitted.\n\nRegards,\nKamran Ahsan`
+      : `Hi ${name},\n\nYour Week ${week} submission (Roll No ${rollNo}) has been rejected and the week is now marked Missing. Please review and resubmit.\n\nRegards,\nKamran Ahsan`;
 
   try {
     await transport.sendMail({
@@ -259,7 +267,7 @@ async function sendReviewEmail({ to, name, rollNo, week, action }) {
       to,
       subject,
       text,
-      html: reviewEmailHtml({ name, rollNo, week, approved }),
+      html: reviewEmailHtml({ name, rollNo, week, approved, reapproved }),
     });
   } catch (error) {
     console.error("sendReviewEmail:", error.message);
@@ -1202,10 +1210,22 @@ async function getAdminAnalytics() {
     { label: "Below 25%", count: studentRows.filter(s => s.rate < .25).length },
   ];
 
-  const pending = allSubmissions
-    .filter(x => !x.action)
+  const withName = list => list
     .map(x => ({ ...x, name: byRoll.get(norm(x.rollNo))?.name || "Unknown" }))
     .sort((a,b) => new Date(b.submittedOn || 0) - new Date(a.submittedOn || 0));
+
+  const pending = withName(allSubmissions.filter(x => !x.action));
+
+  /*
+      Every rejected row is listed so an admin can re-approve it.
+      `resolved` marks the ones whose student/week was already
+      approved on another row — still shown, just not actionable.
+  */
+  const rejected = withName(allSubmissions.filter(x => norm(x.action) === "REJECT"))
+    .map(x => ({
+      ...x,
+      resolved: approvedByStudentWeek.has(`${norm(x.rollNo)}:${x.week}`),
+    }));
 
   const totalSlots = allStudents.length * weeksN;
   const submitted = studentRows.reduce((n,s) => n + s.submitted, 0);
@@ -1224,6 +1244,7 @@ async function getAdminAnalytics() {
       submissionRate: totalSlots ? submitted / totalSlots : 0,
       averageRate,
       studentsAt100: studentRows.filter(s => s.rate >= 1).length,
+      rejected: rejected.filter(x => !x.resolved).length,
       studentsWithMissing: studentRows.filter(s => s.missing > 0).length,
       studentsWithPending: studentRows.filter(s => s.pending > 0).length,
     },
@@ -1231,6 +1252,7 @@ async function getAdminAnalytics() {
     leaderboard: leaderboard.slice(0, 20),
     students: leaderboard,
     pending,
+    rejected,
     missingStudents: [...studentRows].filter(s => s.missing > 0).sort((a,b) => b.missing - a.missing || a.name.localeCompare(b.name)),
     distribution,
   };
@@ -1290,9 +1312,17 @@ app.post("/api/admin/review", adminAuth, async (req, res) => {
 
     const adminRow = cfg.adminStart + (sheetRow - cfg.submissionStart);
 
-    const current = (await get(`${cfg.admin}!G${adminRow}`))[0]?.[0];
+    const current = String((await get(`${cfg.admin}!G${adminRow}`))[0]?.[0] || "").trim();
 
-    if (String(current || "").trim()) {
+    /*
+        A rejected submission can be re-approved (admin changed
+        their mind / student fixed the repo in place). Anything
+        else that already carries a decision stays locked.
+      */
+
+    const reapproved = norm(current) === "REJECT" && action === "Approve";
+
+    if (current && !reapproved) {
       throw new Error("This submission has already been reviewed.");
     }
 
@@ -1345,6 +1375,7 @@ app.post("/api/admin/review", adminAuth, async (req, res) => {
           rollNo: student.rollNo,
           week,
           action,
+          reapproved,
         });
       }
     }
@@ -1352,6 +1383,7 @@ app.post("/api/admin/review", adminAuth, async (req, res) => {
     res.json({
       ok: true,
       action,
+      reapproved,
       row: sheetRow,
       adminRow,
     });
