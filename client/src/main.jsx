@@ -109,6 +109,7 @@ function Admin(){
   const [studentFilter,setStudentFilter]=useState('');
   async function refresh(){ setLoading(true); try{const headers={'x-admin-key':key}; const result=await api('/api/admin/analytics',{headers}); setData(result);setLogged(true);}catch(e){toast.error(e.message)}finally{setLoading(false)} }
   async function review(row,action,reapprove){ setLoading(true);try{await api('/api/admin/review',{method:'POST',headers:{'x-admin-key':key},body:JSON.stringify({row,action})});await refresh();toast.success(reapprove?'Submission re-approved. The student has been emailed.':`Submission ${action.toLowerCase()}d.`)}catch(e){toast.error(e.message)}finally{setLoading(false)} }
+  async function deleteSubmission(row,name,week){ if(!confirm(`Delete ${name}'s Week ${week} rejected submission? This clears the row from the workbook and cannot be undone.`)) return; setLoading(true);try{await api('/api/admin/submissions/'+row,{method:'DELETE',headers:{'x-admin-key':key}});await refresh();toast.success('Rejected submission deleted.')}catch(e){toast.error(e.message)}finally{setLoading(false)} }
   async function addStudent(payload){ setLoading(true);try{await api('/api/admin/students',{method:'POST',headers:{'x-admin-key':key},body:JSON.stringify(payload)});await refresh();toast.success(`${payload.name} added to the roster.`)}catch(e){toast.error(e.message);throw e}finally{setLoading(false)} }
   async function editStudent(rollNo,payload){ setLoading(true);try{await api('/api/admin/students/'+encodeURIComponent(rollNo),{method:'PATCH',headers:{'x-admin-key':key},body:JSON.stringify(payload)});await refresh();toast.success(`${payload.name} updated.`)}catch(e){toast.error(e.message);throw e}finally{setLoading(false)} }
   async function deleteStudent(rollNo,name){ if(!confirm(`Remove ${name} (${rollNo}) from the roster? This cannot be undone.`)) return; setLoading(true);try{await api('/api/admin/students/'+encodeURIComponent(rollNo),{method:'DELETE',headers:{'x-admin-key':key}});await refresh();toast.success(`${name} removed from the roster.`)}catch(e){toast.error(e.message)}finally{setLoading(false)} }
@@ -119,7 +120,7 @@ function Admin(){
   return <div className="app-shell admin-shell">
     <aside className="sidebar glass"><div className="brand"><Logo/><div><b>Admin Portal</b><small>Submission command center</small></div></div><nav>{tabs.map(([id,label])=>{const TabIcon=tabIcons[id];return <button className={tab===id?'active':''} key={id} onClick={()=>{setTab(id);refresh()}}><span><TabIcon size={16}/></span>{label}{id==='review'&&a.pending>0&&<em>{a.pending}</em>}{id==='rejected'&&a.rejected>0&&<em>{a.rejected}</em>}</button>})}</nav><div className="side-footer"><div className="status-chip"><span className="live-dot"/> Google Sheets connected</div><button className="ghost" onClick={()=>{setLogged(false);setData(null)}}>Lock portal</button></div></aside>
     <div className="admin-content"><header className="top-nav admin-top glass"><div><span className="eyebrow">ADMIN / {tabs.find(x=>x[0]===tab)?.[1].toUpperCase()}</span><h2>{tabs.find(x=>x[0]===tab)?.[1]}</h2></div><div className="top-actions"><span className="sync">Last sync: {new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span><button className="secondary" onClick={refresh}><RefreshCw size={14}/> {loading?'Refreshing…':'Refresh'}</button></div></header>
-      <main className="container admin-container">{tab==='overview'&&<Overview data={data} onReview={()=>{setTab('review');refresh()}}/>} {tab==='review'&&<Review data={data} review={review} busy={loading}/>} {tab==='rejected'&&<Rejected data={data} review={review} busy={loading}/>} {tab==='students'&&<Students data={data} filter={studentFilter} setFilter={setStudentFilter} onAdd={addStudent} onEdit={editStudent} onDelete={deleteStudent}/>} {tab==='analytics'&&<Analytics data={data}/>}</main></div>
+      <main className="container admin-container">{tab==='overview'&&<Overview data={data} onReview={()=>{setTab('review');refresh()}}/>} {tab==='review'&&<Review data={data} review={review} busy={loading}/>} {tab==='rejected'&&<Rejected data={data} review={review} onDelete={deleteSubmission} busy={loading}/>} {tab==='students'&&<Students data={data} filter={studentFilter} setFilter={setStudentFilter} onAdd={addStudent} onEdit={editStudent} onDelete={deleteStudent}/>} {tab==='analytics'&&<Analytics data={data}/>}</main></div>
   </div>
 }
 
@@ -141,12 +142,12 @@ function Review({data,review,busy}){
   <ReviewTable rows={data.pending}>{r=><><button className="approve" onClick={()=>review(r.row,'Approve')} disabled={busy}>Approve</button><button className="reject" onClick={()=>review(r.row,'Reject')} disabled={busy}>Reject</button></>}</ReviewTable>
   {!data.pending.length&&<Empty text="No pending submissions. New student submissions will appear here."/>}</GlassCard></>
 }
-function Rejected({data,review,busy}){
+function Rejected({data,review,onDelete,busy}){
   const rows=data.rejected||[];
   const open=rows.filter(r=>!r.resolved).length;
   return <><div className="page-intro"><div><span className="eyebrow">REVERSIBLE DECISIONS</span><h1>Rejected submissions.</h1><p>Re-open a rejected week and approve it. The student is emailed that their work was reviewed again and accepted.</p></div><div className="queue-count">{open}<small>re-approvable</small></div></div>
   <GlassCard className="table-card"><div className="table-toolbar"><div><b>Rejected submissions</b><span>{rows.length} rejected • {open} can be re-approved</span></div></div>
-  <ReviewTable rows={rows}>{r=>r.resolved?<span className="muted">Week already approved</span>:<button className="approve" onClick={()=>review(r.row,'Approve',true)} disabled={busy}>Re-approve</button>}</ReviewTable>
+  <ReviewTable rows={rows}>{r=><>{r.resolved?<span className="muted">Week already approved</span>:<button className="approve" onClick={()=>review(r.row,'Approve',true)} disabled={busy}>Re-approve</button>}<button className="icon-button danger" onClick={()=>onDelete(r.row,r.name,r.week)} disabled={busy} title="Delete this submission"><Trash2 size={14}/></button></>}</ReviewTable>
   {!rows.length&&<Empty text="No rejected submissions. Rejected work will appear here so you can re-approve it."/>}</GlassCard></>
 }
 function Students({data,filter,setFilter,onAdd,onEdit,onDelete}){

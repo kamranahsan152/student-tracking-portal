@@ -382,6 +382,61 @@ async function copyRowFormatting(sheetTitle, sourceRow, destRow) {
   });
 }
 
+/*
+    Clear submission rows and their Admin Review mirror rows.
+    The two sheets are positionally tied (submission row 4 ->
+    admin row 5), so rows are blanked in place, never deleted —
+    deleting would shift every later row out of alignment.
+*/
+
+async function clearSubmissionRows(sheetRows) {
+  if (!sheetRows.length) return 0;
+
+  const [submissionsSheetId, adminSheetId] = await Promise.all([
+    getSheetId(cfg.submissions),
+    getSheetId(cfg.admin),
+  ]);
+
+  const requests = [];
+
+  for (const sheetRow of sheetRows) {
+    const adminRow = cfg.adminStart + (sheetRow - cfg.submissionStart);
+
+    requests.push({
+      updateCells: {
+        range: {
+          sheetId: submissionsSheetId,
+          startRowIndex: sheetRow - 1,
+          endRowIndex: sheetRow,
+          startColumnIndex: 0,
+          endColumnIndex: 4,
+        },
+        fields: "userEnteredValue",
+      },
+    });
+
+    requests.push({
+      updateCells: {
+        range: {
+          sheetId: adminSheetId,
+          startRowIndex: adminRow - 1,
+          endRowIndex: adminRow,
+          startColumnIndex: 6,
+          endColumnIndex: 7,
+        },
+        fields: "userEnteredValue",
+      },
+    });
+  }
+
+  await getSheets().spreadsheets.batchUpdate({
+    spreadsheetId: getSpreadsheetId(),
+    requestBody: { requests },
+  });
+
+  return sheetRows.length;
+}
+
 /* =========================================================
    UTILITIES
 ========================================================= */
@@ -1085,46 +1140,7 @@ app.delete("/api/admin/students/:roll", adminAuth, async (req, res) => {
       }
     });
 
-    if (matches.length) {
-      const submissionsSheetId = await getSheetId(cfg.submissions);
-      const adminSheetId = await getSheetId(cfg.admin);
-
-      const requests = [];
-      for (const sheetRow of matches) {
-        const adminRow = cfg.adminStart + (sheetRow - cfg.submissionStart);
-
-        requests.push({
-          updateCells: {
-            range: {
-              sheetId: submissionsSheetId,
-              startRowIndex: sheetRow - 1,
-              endRowIndex: sheetRow,
-              startColumnIndex: 0,
-              endColumnIndex: 4,
-            },
-            fields: "userEnteredValue",
-          },
-        });
-
-        requests.push({
-          updateCells: {
-            range: {
-              sheetId: adminSheetId,
-              startRowIndex: adminRow - 1,
-              endRowIndex: adminRow,
-              startColumnIndex: 6,
-              endColumnIndex: 7,
-            },
-            fields: "userEnteredValue",
-          },
-        });
-      }
-
-      await getSheets().spreadsheets.batchUpdate({
-        spreadsheetId: getSpreadsheetId(),
-        requestBody: { requests },
-      });
-    }
+    await clearSubmissionRows(matches);
 
     res.json({ ok: true, rollNo: deletedRoll, clearedSubmissions: matches.length });
   } catch (error) {
@@ -1389,6 +1405,56 @@ app.post("/api/admin/review", adminAuth, async (req, res) => {
     });
   } catch (error) {
     console.error("POST /api/admin/review:", error);
+
+    res.status(400).json({
+      error: error.message,
+    });
+  }
+});
+
+/* =========================================================
+   ADMIN - DELETE A REJECTED SUBMISSION
+========================================================= */
+
+app.delete("/api/admin/submissions/:row", adminAuth, async (req, res) => {
+  try {
+    const sheetRow = Number(req.params.row);
+
+    if (
+      !Number.isInteger(sheetRow) ||
+      sheetRow < cfg.submissionStart ||
+      sheetRow > cfg.submissionEnd
+    ) {
+      throw new Error("Invalid submission row.");
+    }
+
+    const adminRow = cfg.adminStart + (sheetRow - cfg.submissionStart);
+
+    const [submissionRow, actionCell] = await batchGet([
+      `${cfg.submissions}!A${sheetRow}:B${sheetRow}`,
+      `${cfg.admin}!G${adminRow}`,
+    ]);
+
+    const [rollNo] = submissionRow[0] || [];
+
+    if (!rollNo) {
+      throw new Error("That submission row is already empty.");
+    }
+
+    /*
+        Only rejected rows are deletable. Pending work belongs in
+        the review queue and approved work is a student's record.
+      */
+
+    if (norm(actionCell[0]?.[0]) !== "REJECT") {
+      throw new Error("Only rejected submissions can be deleted.");
+    }
+
+    await clearSubmissionRows([sheetRow]);
+
+    res.json({ ok: true, row: sheetRow, adminRow });
+  } catch (error) {
+    console.error("DELETE /api/admin/submissions:", error);
 
     res.status(400).json({
       error: error.message,
