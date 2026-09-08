@@ -1,6 +1,6 @@
 import React, { useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Sparkles, Search, CheckCircle2, Clock, AlertTriangle, TrendingUp, LayoutGrid, Users, BarChart3, Star, RefreshCw, ArrowRight, ExternalLink, Mail, Code2, UserPlus, X, Pencil, Trash2, XCircle } from 'lucide-react';
+import { Sparkles, Search, CheckCircle2, Clock, AlertTriangle, TrendingUp, LayoutGrid, Users, BarChart3, Star, RefreshCw, ArrowRight, ExternalLink, Mail, Code2, UserPlus, X, Pencil, Trash2, XCircle, Rocket, CalendarClock } from 'lucide-react';
 import './styles.css';
 
 let toasts = [];
@@ -50,6 +50,9 @@ function StudentPortal(){
   async function saveEmail(email){
     setLoading(true); try{ await api(`/api/student/${encodeURIComponent(roll)}/email`,{method:'POST',body:JSON.stringify({email})}); setStudent(s=>({...s,email})); toast.success('Email saved. You will get an email when a week is reviewed.'); }catch(e){toast.error(e.message)}finally{setLoading(false)}
   }
+  async function saveProject(projectName,githubProfile){
+    setLoading(true); try{ await api(`/api/student/${encodeURIComponent(roll)}/project`,{method:'POST',body:JSON.stringify({projectName,githubProfile})}); setStudent(s=>({...s,projectName,githubProfile})); toast.success('Final project registered.'); }catch(e){toast.error(e.message)}finally{setLoading(false)}
+  }
   return <div className="app-shell student-shell">
     <header className="top-nav glass"><div className="brand"><Logo/><div><b>Student Portal</b><small>12-week submission tracking</small></div></div><div className="nav-pill"><span className="live-dot"/> Live sheet sync</div></header>
     <main className="container">
@@ -58,9 +61,11 @@ function StudentPortal(){
         <div className="lookup glass-inner"><div className="input-wrap"><Icon><Search size={17}/></Icon><input value={roll} onChange={e=>setRoll(e.target.value)} placeholder="Enter Roll No" onKeyDown={e=>e.key==='Enter'&&load()}/></div><button className="primary" onClick={()=>load()} disabled={loading}>{loading?'Loading…':'View progress'} <ArrowRight size={16}/></button></div>
         {!student && <div className="hero-highlights"><div><span><CheckCircle2 size={16}/></span><div><strong>Submission history</strong>Every week, tracked</div></div><div><span><Clock size={16}/></span><div><strong>Review status</strong>Know what's pending</div></div><div><span><AlertTriangle size={16}/></span><div><strong>Missing work</strong>Never miss a deadline</div></div></div>}
       </GlassCard>
-      {student && (student.email
-        ? <StudentDetails student={student} onSubmit={submit} />
-        : <EmailGate student={student} onSave={saveEmail} loading={loading}/>)}
+      {student && (!student.email
+        ? <EmailGate student={student} onSave={saveEmail} loading={loading}/>
+        : !student.projectName
+          ? <ProjectGate student={student} onSave={saveProject} loading={loading}/>
+          : <StudentDetails student={student} onSubmit={submit} />)}
     </main>
   </div>
 }
@@ -86,22 +91,86 @@ function EmailGate({student,onSave,loading}){
   </GlassCard>
 }
 
+function ProjectGate({student,onSave,loading}){
+  const [name,setName]=useState('');
+  const [profile,setProfile]=useState(student.githubProfile||'');
+  const [error,setError]=useState('');
+  function save(){
+    if(name.trim().length<3){ const m='Enter your project name (at least 3 characters).'; setError(m); return toast.error(m); }
+    if(!/^https:\/\/github\.com\/[^/\s]+\/?$/i.test(profile.trim())){ const m='Enter your GitHub profile URL, e.g. https://github.com/username'; setError(m); return toast.error(m); }
+    setError('');
+    onSave(name.trim(),profile.trim());
+  }
+  return <GlassCard className="hero student-hero gate-card">
+    <div className="hero-copy">
+      <span className="eyebrow">FINAL TASK</span>
+      <h1>Register your final project.</h1>
+      <p><b>Please read this carefully before you type.</b> Complete both steps below in order, then submit. You only get to do this once — the name you enter here cannot be changed later without your admin.</p>
+    </div>
+    <ol className="form-guide">
+      <li><span className="step-num">1</span><div><b>Enter your project name</b>The title of the project you want to submit for the final task — a name only, not a link.</div></li>
+      <li><span className="step-num">2</span><div><b>Enter your GitHub profile</b>Your profile URL, like <code>https://github.com/username</code> — not a repository link.</div></li>
+      <li><span className="step-num">3</span><div><b>Press Submit project</b>Your Week 10 repository URL is uploaded separately, on the week tracker.</div></li>
+    </ol>
+    <div className="lookup glass-inner project-gate-fields">
+      <label className="field"><span className="field-label"><span className="step-num small">1</span> Project name</span><div className={`input-wrap ${error?'has-error':''}`}><Icon><Rocket size={17}/></Icon><input autoFocus value={name} onChange={e=>{setName(e.target.value);setError('')}} placeholder="e.g. Smart Attendance System" onKeyDown={e=>e.key==='Enter'&&save()}/></div></label>
+      <label className="field"><span className="field-label"><span className="step-num small">2</span> GitHub profile</span><div className={`input-wrap ${error?'has-error':''}`}><Icon><Code2 size={17}/></Icon><input value={profile} onChange={e=>{setProfile(e.target.value);setError('')}} placeholder="https://github.com/username" onKeyDown={e=>e.key==='Enter'&&save()}/></div></label>
+      <button className="primary" onClick={save} disabled={loading}>{loading?'Saving…':'Submit project'} <ArrowRight size={16}/></button>
+    </div>
+    {error && <p className="field-error">{error}</p>}
+    <DeadlineNote finalTask={student.finalTask}/>
+  </GlassCard>
+}
+
+/*
+   Once the final week is submitted the deadline warning is
+   irrelevant, so it's replaced by the review-status message.
+*/
+/* Always 12-hour with an uppercase AM/PM, regardless of browser locale. */
+const fmtDeadline = value => {
+  const d=new Date(value);
+  const day=d.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  const time=d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true}).toUpperCase();
+  return `${day} at ${time}`;
+};
+
+function DeadlineNote({finalTask,status}){
+  if(!finalTask) return null;
+  const when=new Date(finalTask.deadline);
+  const late=Date.now()>when.getTime();
+  const done=status==='Pending'||status==='Submitted';
+  if(done) return <div className={`deadline-note ${status==='Submitted'?'done':'sent'}`}><Icon>{status==='Submitted'?<CheckCircle2 size={16}/>:<Clock size={16}/>}</Icon><span>{status==='Submitted'
+    ? <>Your final task has been <b>approved</b>. Your project is cleared for your certification.</>
+    : <>Your final task has been submitted and is <b>waiting for your instructor</b> to review and approve your project for your certification.</>}</span></div>;
+  return <div className={`deadline-note ${late?'late':''}`}><Icon><CalendarClock size={16}/></Icon><span>{late
+    ? <>The Week {finalTask.week} upload window closed on <b>{fmtDeadline(when)}</b>. Contact your admin if you still need to submit.</>
+    : <>Warning: you can upload your Week {finalTask.week} URL only until <b>{fmtDeadline(when)}</b>. After that the final task closes.</>}</span></div>;
+}
+
+function ProjectCard({student}){
+  return <GlassCard className="email-card project-card"><Icon><Rocket size={16}/></Icon><span>Final project <b>{student.projectName}</b>{student.githubProfile&&<> • <a href={student.githubProfile} target="_blank" rel="noreferrer">{student.githubProfile.replace(/^https:\/\/github\.com\//i,'@')}</a></>}</span></GlassCard>;
+}
+
 function StudentDetails({student,onSubmit}){
   const submitted=student.submitted, missing=student.missing, pending=student.pending;
   return <>
     <GlassCard className="profile-card"><div className="avatar">{student.name?.slice(0,1)?.toUpperCase()||'S'}</div><div className="profile-main"><span className="eyebrow">STUDENT PROFILE</span><h2>{student.name}</h2><p>{student.rollNo} <span>•</span> {student.semester || 'Student'}</p></div><div className="profile-side"><span>Current progress</span><strong>{pct(student.submissionPercent)}</strong><ProgressBar value={student.submissionPercent*100}/></div></GlassCard>
     <EmailBadge email={student.email}/>
+    <ProjectCard student={student}/>
+    {student.finalTask?.active&&<DeadlineNote finalTask={student.finalTask} status={student.weeks.find(w=>w.week===student.finalTask.week)?.status}/>}
     <div className="stats-grid"><Stat label="Submitted" value={submitted} meta={`of ${student.activeWeeks} active weeks`} icon={CheckCircle2} tone="green"/><Stat label="Missing" value={missing} meta="Needs your attention" icon={AlertTriangle} tone="red"/><Stat label="Pending" value={pending} meta="Waiting for review" icon={Clock} tone="amber"/><Stat label="Completion" value={pct(student.submissionPercent)} meta="Approved submissions" icon={TrendingUp} tone="accent"/></div>
-    <GlassCard className="weekly-card"><div className="section-head"><div><span className="eyebrow">WEEKLY TRACKER</span><h3>Your 12-week journey</h3></div><span className="active-weeks">{student.activeWeeks} active weeks</span></div><div className="week-list">{student.weeks.map(w=><StudentWeek key={w.week} week={w} onSubmit={onSubmit}/>)}</div></GlassCard>
+    <GlassCard className="weekly-card"><div className="section-head"><div><span className="eyebrow">WEEKLY TRACKER</span><h3>Your 12-week journey</h3></div><span className="active-weeks">{student.activeWeeks} active weeks</span></div><div className="week-list">{student.weeks.map(w=><StudentWeek key={w.week} week={w} onSubmit={onSubmit} finalTask={student.finalTask}/>)}</div></GlassCard>
   </>
 }
 
 function EmailBadge({email}){
   return <GlassCard className="email-card"><Icon><Mail size={16}/></Icon><span>Progress emails go to <b>{email}</b></span></GlassCard>;
 }
-function StudentWeek({week,onSubmit}){
+function StudentWeek({week,onSubmit,finalTask}){
   const [url,setUrl]=useState('');
-  return <div className={`week-row ${week.status.toLowerCase()}`}><div className="week-number"><span>W{String(week.week).padStart(2,'0')}</span><div><b>Week {week.week}</b><small>{week.status==='Submitted'?'Submission approved':week.status==='Pending'?'Under admin review':'Assignment is missing'}</small></div></div><div className="week-action"><Badge status={week.status}/>{week.status==='Missing'&&<div className="submit-inline"><input value={url} onChange={e=>setUrl(e.target.value)} placeholder="GitHub repository URL"/><button className="primary small" onClick={()=>onSubmit(week.week,url)}>Submit</button></div>}{week.status==='Pending'&&<span className="muted">GitHub link received • awaiting review</span>}{week.githubUrl&&<a className="repo-link" href={week.githubUrl} target="_blank" rel="noreferrer">Open repository <ExternalLink size={12}/></a>}</div></div>
+  /* The final week stops accepting uploads once its deadline passes. */
+  const closed=finalTask&&week.week===finalTask.week&&Date.now()>new Date(finalTask.deadline).getTime();
+  return <div className={`week-row ${week.status.toLowerCase()}`}><div className="week-number"><span>W{String(week.week).padStart(2,'0')}</span><div><b>Week {week.week}</b><small>{week.status==='Submitted'?'Submission approved':week.status==='Pending'?'Under admin review':closed?'Final task closed':'Assignment is missing'}</small></div></div><div className="week-action"><Badge status={week.status}/>{week.status==='Missing'&&(closed?<span className="muted">Upload window closed • contact your admin</span>:<div className="submit-inline"><input value={url} onChange={e=>setUrl(e.target.value)} placeholder="GitHub repository URL"/><button className="primary small" onClick={()=>onSubmit(week.week,url)}>Submit</button></div>)}{week.status==='Pending'&&<span className="muted">GitHub link received • awaiting review</span>}{week.githubUrl&&<a className="repo-link" href={week.githubUrl} target="_blank" rel="noreferrer">Open repository <ExternalLink size={12}/></a>}</div></div>
 }
 
 function Admin(){
@@ -109,6 +178,7 @@ function Admin(){
   const [studentFilter,setStudentFilter]=useState('');
   async function refresh(){ setLoading(true); try{const headers={'x-admin-key':key}; const result=await api('/api/admin/analytics',{headers}); setData(result);setLogged(true);}catch(e){toast.error(e.message)}finally{setLoading(false)} }
   async function review(row,action,reapprove){ setLoading(true);try{await api('/api/admin/review',{method:'POST',headers:{'x-admin-key':key},body:JSON.stringify({row,action})});await refresh();toast.success(reapprove?'Submission re-approved. The student has been emailed.':`Submission ${action.toLowerCase()}d.`)}catch(e){toast.error(e.message)}finally{setLoading(false)} }
+  async function setActiveWeeks(weeks){ setLoading(true);try{await api('/api/admin/active-weeks',{method:'POST',headers:{'x-admin-key':key},body:JSON.stringify({weeks})});await refresh();toast.success(`Weeks 1–${weeks} are now active for students.`)}catch(e){toast.error(e.message)}finally{setLoading(false)} }
   async function deleteSubmission(row,name,week){ if(!confirm(`Delete ${name}'s Week ${week} rejected submission? This clears the row from the workbook and cannot be undone.`)) return; setLoading(true);try{await api('/api/admin/submissions/'+row,{method:'DELETE',headers:{'x-admin-key':key}});await refresh();toast.success('Rejected submission deleted.')}catch(e){toast.error(e.message)}finally{setLoading(false)} }
   async function addStudent(payload){ setLoading(true);try{await api('/api/admin/students',{method:'POST',headers:{'x-admin-key':key},body:JSON.stringify(payload)});await refresh();toast.success(`${payload.name} added to the roster.`)}catch(e){toast.error(e.message);throw e}finally{setLoading(false)} }
   async function editStudent(rollNo,payload){ setLoading(true);try{await api('/api/admin/students/'+encodeURIComponent(rollNo),{method:'PATCH',headers:{'x-admin-key':key},body:JSON.stringify(payload)});await refresh();toast.success(`${payload.name} updated.`)}catch(e){toast.error(e.message);throw e}finally{setLoading(false)} }
@@ -120,16 +190,27 @@ function Admin(){
   return <div className="app-shell admin-shell">
     <aside className="sidebar glass"><div className="brand"><Logo/><div><b>Admin Portal</b><small>Submission command center</small></div></div><nav>{tabs.map(([id,label])=>{const TabIcon=tabIcons[id];return <button className={tab===id?'active':''} key={id} onClick={()=>{setTab(id);refresh()}}><span><TabIcon size={16}/></span>{label}{id==='review'&&a.pending>0&&<em>{a.pending}</em>}{id==='rejected'&&a.rejected>0&&<em>{a.rejected}</em>}</button>})}</nav><div className="side-footer"><div className="status-chip"><span className="live-dot"/> Google Sheets connected</div><button className="ghost" onClick={()=>{setLogged(false);setData(null)}}>Lock portal</button></div></aside>
     <div className="admin-content"><header className="top-nav admin-top glass"><div><span className="eyebrow">ADMIN / {tabs.find(x=>x[0]===tab)?.[1].toUpperCase()}</span><h2>{tabs.find(x=>x[0]===tab)?.[1]}</h2></div><div className="top-actions"><span className="sync">Last sync: {new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span><button className="secondary" onClick={refresh}><RefreshCw size={14}/> {loading?'Refreshing…':'Refresh'}</button></div></header>
-      <main className="container admin-container">{tab==='overview'&&<Overview data={data} onReview={()=>{setTab('review');refresh()}}/>} {tab==='review'&&<Review data={data} review={review} busy={loading}/>} {tab==='rejected'&&<Rejected data={data} review={review} onDelete={deleteSubmission} busy={loading}/>} {tab==='students'&&<Students data={data} filter={studentFilter} setFilter={setStudentFilter} onAdd={addStudent} onEdit={editStudent} onDelete={deleteStudent}/>} {tab==='analytics'&&<Analytics data={data}/>}</main></div>
+      <main className="container admin-container">{tab==='overview'&&<Overview data={data} onReview={()=>{setTab('review');refresh()}} onSetWeeks={setActiveWeeks} busy={loading}/>} {tab==='review'&&<Review data={data} review={review} busy={loading}/>} {tab==='rejected'&&<Rejected data={data} review={review} onDelete={deleteSubmission} busy={loading}/>} {tab==='students'&&<Students data={data} filter={studentFilter} setFilter={setStudentFilter} onAdd={addStudent} onEdit={editStudent} onDelete={deleteStudent}/>} {tab==='analytics'&&<Analytics data={data}/>}</main></div>
   </div>
 }
 
-function Overview({data,onReview}){const s=data.summary;return <>
-  <div className="page-intro"><div><span className="eyebrow">OVERVIEW</span><h1>Everything at a glance.</h1><p>Live insights from your Student Tracking workbook.</p></div><button className="primary" onClick={onReview}>Review pending <ArrowRight size={16}/></button></div>
+function Overview({data,onReview,onSetWeeks,busy}){const s=data.summary;return <>
+  <div className="page-intro"><div><span className="eyebrow">OVERVIEW</span><h1>Everything at a glance.</h1><p>Live insights from your Student Tracking workbook.</p></div><div className="top-actions"><ActiveWeeks current={s.activeWeeks} finalTask={data.finalTask} onSet={onSetWeeks} busy={busy}/><button className="primary" onClick={onReview}>Review pending <ArrowRight size={16}/></button></div></div>
   <div className="stats-grid admin-stats"><Stat label="Total students" value={s.students} meta="Active roster" icon={Users}/><Stat label="Submitted" value={s.submitted} meta={`${pct(s.submissionRate)} submission rate`} icon={CheckCircle2} tone="green"/><Stat label="Missing" value={s.missing} meta={`${s.studentsWithMissing} students affected`} icon={AlertTriangle} tone="red"/><Stat label="Pending review" value={s.pending} meta="Awaiting admin action" icon={Clock} tone="amber"/><Stat label="Active weeks" value={s.activeWeeks} meta="of 12 course weeks" icon={LayoutGrid} tone="accent"/><Stat label="100% complete" value={s.studentsAt100} meta="Perfect active-week record" icon={Star} tone="green"/></div>
   <div className="dashboard-grid"><GlassCard className="panel"><div className="section-head"><div><span className="eyebrow">WEEKLY HEALTH</span><h3>Submission performance</h3></div><span className="mini-label">Weeks 1–{s.activeWeeks}</span></div><WeeklyChart weeks={data.weekly}/></GlassCard><GlassCard className="panel"><div className="section-head"><div><span className="eyebrow">LEADERBOARD</span><h3>Top students</h3></div><span className="mini-label">by completion</span></div><Leaderboard rows={data.leaderboard}/></GlassCard></div>
   <div className="dashboard-grid lower"><GlassCard className="panel"><div className="section-head"><div><span className="eyebrow">ACTION QUEUE</span><h3>Recent pending submissions</h3></div><button className="link-button" onClick={onReview}>View all <ArrowRight size={14}/></button></div><PendingList rows={data.pending.slice(0,5)} onReview={onReview}/></GlassCard><GlassCard className="panel"><div className="section-head"><div><span className="eyebrow">ATTENTION</span><h3>Students with missing work</h3></div></div><MissingList rows={data.missingStudents.slice(0,6)}/></GlassCard></div>
 </>}
+function ActiveWeeks({current,finalTask,onSet,busy}){
+  const [value,setValue]=useState(String(current));
+  const week=finalTask?.week;
+  return <div className="weeks-control">
+    <span className="mini-label">Active weeks</span>
+    <input type="number" min="1" max="12" value={value} onChange={e=>setValue(e.target.value)}/>
+    <button className="secondary" onClick={()=>onSet(Number(value))} disabled={busy||Number(value)===current}>Save</button>
+    {week&&!finalTask.active&&<button className="primary small" onClick={()=>{setValue(String(week));onSet(week)}} disabled={busy}>Open Week {week} final task</button>}
+  </div>;
+}
+
 function WeeklyChart({weeks}){const max=Math.max(...weeks.map(w=>w.total||0),1);return <div className="chart">{weeks.map(w=><div className="bar-group" key={w.week}><div className="bar-track"><div className="bar submitted" style={{height:`${(w.submitted/max)*100}%`}}/><div className="bar pending" style={{height:`${(w.pending/max)*100}%`}}/></div><b>{w.submitted}</b><small>W{w.week}</small><span>{pct(w.rate)}</span></div>)}</div>}
 function Leaderboard({rows}){return <div className="leader-list">{rows.slice(0,8).map((r,i)=><div className="leader-row" key={r.rollNo}><span className="rank">{i+1}</span><div className="mini-avatar">{r.name?.slice(0,1)}</div><div className="leader-name"><b>{r.name}</b><small>{r.rollNo}</small></div><div className="leader-progress"><ProgressBar value={r.rate*100}/></div><strong>{pct(r.rate)}</strong></div>)}</div>}
 function PendingList({rows,onReview}){if(!rows.length)return <Empty text="No pending submissions. You're all caught up."/>;return <div className="pending-list">{rows.map(r=><div className="pending-row" key={r.row}><div className="mini-avatar">{r.name?.slice(0,1)}</div><div><b>{r.name}</b><small>{r.rollNo} • Week {r.week}</small></div><a href={r.url} target="_blank" rel="noreferrer">GitHub <ExternalLink size={11}/></a><button className="icon-button" onClick={onReview}>Review</button></div>)}</div>}

@@ -55,6 +55,29 @@ const cfg = {
   adminStart: 5,
 };
 
+/*
+    Week 10 is the final task. Students may keep uploading their
+    Week 10 URL until this moment; it's shown as a warning in the
+    portal and is not enforced server-side.
+
+    ponytail: single hardcoded deadline, move to Dashboard cell if
+    other weeks ever need their own.
+*/
+
+const finalTask = {
+  week: 10,
+  deadline: "2026-09-13T23:59:00+05:00",
+};
+
+const finalTaskDeadline = () => new Date(finalTask.deadline).getTime();
+
+const finalTaskDeadlineLabel = () =>
+  new Date(finalTask.deadline).toLocaleString("en-PK", {
+    timeZone: "Asia/Karachi",
+    dateStyle: "full",
+    timeStyle: "short",
+  });
+
 let sheets = null;
 
 /* =========================================================
@@ -452,7 +475,7 @@ const norm = (value) =>
 
 async function students() {
   const rows = await get(
-    `${cfg.students}!A${cfg.studentStart}:L${cfg.studentEnd}`,
+    `${cfg.students}!A${cfg.studentStart}:M${cfg.studentEnd}`,
   );
 
   return rows
@@ -463,6 +486,7 @@ async function students() {
       semester: row[2] || "",
       email: row[3] || "",
       githubProfile: row[4] || "",
+      projectName: row[12] || "",
     }));
 }
 
@@ -536,7 +560,7 @@ async function getStudent(rollNo) {
 
   const [studentRows, trackingRows, dashboardRows, submissionRows] =
     await batchGet([
-      `${cfg.students}!A${cfg.studentStart}:L${cfg.studentEnd}`,
+      `${cfg.students}!A${cfg.studentStart}:M${cfg.studentEnd}`,
       `${cfg.tracking}!A${cfg.trackingStart}:AK${cfg.trackingEnd}`,
       `${cfg.dashboard}!B4`,
       `${cfg.submissions}!A${cfg.submissionStart}:E${cfg.submissionEnd}`,
@@ -550,6 +574,7 @@ async function getStudent(rollNo) {
       semester: row[2] || "",
       email: row[3] || "",
       githubProfile: row[4] || "",
+      projectName: row[12] || "",
     }));
 
   const student = allStudents.find(
@@ -688,8 +713,85 @@ async function getStudent(rollNo) {
     submissionPercent: weeksN > 0 ? submitted / weeksN : 0,
 
     weeks,
+
+    finalTask: {
+      ...finalTask,
+      active: weeksN >= finalTask.week,
+    },
   };
 }
+
+/*
+   Student registers their final-task project (once).
+   Writes only the project name (F) and GitHub profile (E);
+   it cannot touch roll no, name, semester or email, and
+   refuses to overwrite a project name that's already set.
+*/
+
+app.post("/api/student/:roll/project", async (req, res) => {
+  try {
+    const projectName = String(req.body?.projectName || "").trim();
+    const githubProfile = String(req.body?.githubProfile || "").trim();
+
+    if (projectName.length < 3) {
+      throw new Error("Enter your project name (at least 3 characters).");
+    }
+
+    if (projectName.length > 120) {
+      throw new Error("Project name is too long.");
+    }
+
+    if (!/^https:\/\/github\.com\/[^/\s]+\/?$/i.test(githubProfile)) {
+      throw new Error(
+        "Enter your GitHub profile URL, e.g. https://github.com/username",
+      );
+    }
+
+    const existing = await students();
+
+    const index = existing.findIndex(
+      (student) => norm(student.rollNo) === norm(req.params.roll),
+    );
+
+    if (index < 0) {
+      throw new Error("Roll No not found.");
+    }
+
+    if (existing[index].projectName) {
+      throw new Error(
+        "A project name is already registered. Contact your admin to change it.",
+      );
+    }
+
+    const studentRow = cfg.studentStart + index;
+
+    /*
+        E = GitHub Profile, M = Final Project.
+        F:L are live formulas (Total Weeks .. Overall Status)
+        and must never be written through, so the two cells are
+        updated as separate ranges rather than one E:M span.
+      */
+
+    await getSheets().spreadsheets.values.batchUpdate({
+      spreadsheetId: getSpreadsheetId(),
+      requestBody: {
+        valueInputOption: "USER_ENTERED",
+        data: [
+          { range: `${cfg.students}!E${studentRow}`, values: [[githubProfile]] },
+          { range: `${cfg.students}!M${studentRow}`, values: [[projectName]] },
+        ],
+      },
+    });
+
+    res.json({ ok: true, projectName, githubProfile });
+  } catch (error) {
+    console.error("POST /api/student/:roll/project:", error);
+
+    res.status(400).json({
+      error: error.message,
+    });
+  }
+});
 
 /* =========================================================
    ADMIN AUTH
@@ -826,6 +928,17 @@ app.post("/api/submissions", async (req, res) => {
 
     if (norm(targetWeek.status) !== "MISSING") {
       throw new Error(`Week ${weekNumber} is currently ${targetWeek.status}.`);
+    }
+
+    /*
+        The final task closes at its deadline. Only that week is
+        time-limited; the other weeks stay open while active.
+      */
+
+    if (weekNumber === finalTask.week && Date.now() > finalTaskDeadline()) {
+      throw new Error(
+        `The Week ${finalTask.week} final task closed on ${finalTaskDeadlineLabel()}. Contact your admin if you still need to submit.`,
+      );
     }
 
     const existingSubmissions = await submissions();
@@ -1197,6 +1310,7 @@ async function getAdminAnalytics() {
       semester: student.semester,
       email: student.email,
       githubProfile: student.githubProfile,
+      projectName: student.projectName,
       submitted,
       missing,
       pending,
@@ -1264,6 +1378,7 @@ async function getAdminAnalytics() {
       studentsWithMissing: studentRows.filter(s => s.missing > 0).length,
       studentsWithPending: studentRows.filter(s => s.pending > 0).length,
     },
+    finalTask: { ...finalTask, active: weeksN >= finalTask.week },
     weekly,
     leaderboard: leaderboard.slice(0, 20),
     students: leaderboard,
@@ -1405,6 +1520,33 @@ app.post("/api/admin/review", adminAuth, async (req, res) => {
     });
   } catch (error) {
     console.error("POST /api/admin/review:", error);
+
+    res.status(400).json({
+      error: error.message,
+    });
+  }
+});
+
+/* =========================================================
+   ADMIN - ACTIVE WEEKS
+
+   Dashboard!B4 drives which weeks the portal shows. Raising
+   it to 10 opens the Week 10 final task for every student.
+========================================================= */
+
+app.post("/api/admin/active-weeks", adminAuth, async (req, res) => {
+  try {
+    const weeks = Number(req.body?.weeks);
+
+    if (!Number.isInteger(weeks) || weeks < 1 || weeks > 12) {
+      throw new Error("Active weeks must be a whole number from 1 to 12.");
+    }
+
+    await update(`${cfg.dashboard}!B4`, [[weeks]]);
+
+    res.json({ ok: true, activeWeeks: weeks });
+  } catch (error) {
+    console.error("POST /api/admin/active-weeks:", error);
 
     res.status(400).json({
       error: error.message,
