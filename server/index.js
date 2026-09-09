@@ -58,7 +58,7 @@ const cfg = {
 /*
     Week 10 is the final task. Students may keep uploading their
     Week 10 URL until this moment; it's shown as a warning in the
-    portal and is not enforced server-side.
+    portal and enforced in POST /api/submissions.
 
     ponytail: single hardcoded deadline, move to Dashboard cell if
     other weeks ever need their own.
@@ -66,7 +66,7 @@ const cfg = {
 
 const finalTask = {
   week: 10,
-  deadline: "2026-09-13T23:59:00+05:00",
+  deadline: "2026-09-16T23:59:00+05:00",
 };
 
 const finalTaskDeadline = () => new Date(finalTask.deadline).getTime();
