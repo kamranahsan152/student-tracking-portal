@@ -794,15 +794,14 @@ async function getStudent(rollNo) {
     }
 
     /*
-      Prefer the pending submission URL.
-      Otherwise show the latest rejected submission.
+      Keep the latest repository URL available for the tracker no matter
+      whether the submission is pending, approved, or rejected. This lets
+      students reopen a repository from every week that has a URL.
     */
 
-    const submission =
-      weekSubmissions.find((item) => !item.action) ||
-      [...weekSubmissions]
-        .reverse()
-        .find((item) => norm(item.action) === "REJECT");
+    const submission = [...weekSubmissions]
+      .reverse()
+      .find((item) => String(item.url || "").trim());
 
     weeks.push({
       week,
