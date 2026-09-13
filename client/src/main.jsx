@@ -1,6 +1,6 @@
 import React, { useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Sparkles, Search, CheckCircle2, Clock, AlertTriangle, TrendingUp, LayoutGrid, Users, BarChart3, Star, RefreshCw, ArrowRight, ExternalLink, Mail, Code2, UserPlus, X, Pencil, Trash2, XCircle, Rocket, CalendarClock } from 'lucide-react';
+import { Sparkles, Search, CheckCircle2, Clock, AlertTriangle, TrendingUp, LayoutGrid, Users, BarChart3, Star, RefreshCw, ArrowRight, ExternalLink, Mail, Code2, UserPlus, X, Pencil, Trash2, XCircle, Rocket, CalendarClock, Award, BadgeCheck, ShieldCheck } from 'lucide-react';
 import './styles.css';
 
 let toasts = [];
@@ -151,13 +151,38 @@ function ProjectCard({student}){
   return <GlassCard className="email-card project-card"><Icon><Rocket size={16}/></Icon><span>Final project <b>{student.projectName}</b>{student.githubProfile&&<> • <a href={student.githubProfile} target="_blank" rel="noreferrer">{student.githubProfile.replace(/^https:\/\/github\.com\//i,'@')}</a></>}</span></GlassCard>;
 }
 
+function CertificateEligibility({student}){
+  return <section className="certificate-eligibility" aria-labelledby="certificate-eligibility-title">
+    <div className="certificate-hero">
+      <div className="certificate-orbit" aria-hidden="true"><Award size={28}/><span>10</span><small>WEEKS</small></div>
+      <div className="certificate-copy">
+        <span className="certificate-kicker"><BadgeCheck size={15}/> CERTIFICATE ELIGIBILITY UNLOCKED</span>
+        <h2 id="certificate-eligibility-title">You did it, {student.name?.split(' ')[0] || 'student'}.</h2>
+        <p>Your Week 10 final project has been approved. You are now eligible to receive your course completion certificate.</p>
+        <div className="certificate-project"><span>FINAL PROJECT</span><strong>{student.projectName || 'Final project'}</strong></div>
+      </div>
+    </div>
+    <div className="certificate-details">
+      <div className="certificate-detail-heading"><div><span className="eyebrow">NEXT MILESTONE</span><h3>Certificate status</h3></div><span className="certificate-status"><ShieldCheck size={14}/> Eligible</span></div>
+      <p className="certificate-lede">Your eligibility has been recorded in the Student Portal. Keep this page and your email for your records.</p>
+      <ul className="certificate-checklist">
+        <li><CheckCircle2 size={17}/><span><b>Week 10 approved</b> Your final project passed admin review.</span></li>
+        <li><CheckCircle2 size={17}/><span><b>Eligibility recorded</b> Your completion status is now unlocked.</span></li>
+        <li><Mail size={17}/><span><b>Updates sent to you</b> Certificate distribution details will arrive at {student.email}.</span></li>
+      </ul>
+    </div>
+  </section>;
+}
+
 function StudentDetails({student,onSubmit}){
   const submitted=student.submitted, missing=student.missing, pending=student.pending;
   return <>
     <GlassCard className="profile-card"><div className="avatar">{student.name?.slice(0,1)?.toUpperCase()||'S'}</div><div className="profile-main"><span className="eyebrow">STUDENT PROFILE</span><h2>{student.name}</h2><p>{student.rollNo} <span>•</span> {student.semester || 'Student'}</p></div><div className="profile-side"><span>Current progress</span><strong>{pct(student.submissionPercent)}</strong><ProgressBar value={student.submissionPercent*100}/></div></GlassCard>
     <EmailBadge email={student.email}/>
     <ProjectCard student={student}/>
-    {student.finalTask?.active&&<DeadlineNote finalTask={student.finalTask} status={student.weeks.find(w=>w.week===student.finalTask.week)?.status}/>}
+    {student.certificateEligible
+      ? <CertificateEligibility student={student}/>
+      : student.finalTask?.active&&<DeadlineNote finalTask={student.finalTask} status={student.weeks.find(w=>w.week===student.finalTask.week)?.status}/>} 
     <div className="stats-grid"><Stat label="Submitted" value={submitted} meta={`of ${student.activeWeeks} active weeks`} icon={CheckCircle2} tone="green"/><Stat label="Missing" value={missing} meta="Needs your attention" icon={AlertTriangle} tone="red"/><Stat label="Pending" value={pending} meta="Waiting for review" icon={Clock} tone="amber"/><Stat label="Completion" value={pct(student.submissionPercent)} meta="Approved submissions" icon={TrendingUp} tone="accent"/></div>
     <GlassCard className="weekly-card"><div className="section-head"><div><span className="eyebrow">WEEKLY TRACKER</span><h3>Your 12-week journey</h3></div><span className="active-weeks">{student.activeWeeks} active weeks</span></div><div className="week-list">{student.weeks.map(w=><StudentWeek key={w.week} week={w} onSubmit={onSubmit} finalTask={student.finalTask}/>)}</div></GlassCard>
   </>
@@ -215,7 +240,7 @@ function WeeklyChart({weeks}){const max=Math.max(...weeks.map(w=>w.total||0),1);
 function Leaderboard({rows}){return <div className="leader-list">{rows.slice(0,8).map((r,i)=><div className="leader-row" key={r.rollNo}><span className="rank">{i+1}</span><div className="mini-avatar">{r.name?.slice(0,1)}</div><div className="leader-name"><b>{r.name}</b><small>{r.rollNo}</small></div><div className="leader-progress"><ProgressBar value={r.rate*100}/></div><strong>{pct(r.rate)}</strong></div>)}</div>}
 function PendingList({rows,onReview}){if(!rows.length)return <Empty text="No pending submissions. You're all caught up."/>;return <div className="pending-list">{rows.map(r=><div className="pending-row" key={r.row}><div className="mini-avatar">{r.name?.slice(0,1)}</div><div><b>{r.name}</b><small>{r.rollNo} • Week {r.week}</small></div><a href={r.url} target="_blank" rel="noreferrer">GitHub <ExternalLink size={11}/></a><button className="icon-button" onClick={onReview}>Review</button></div>)}</div>}
 function MissingList({rows}){if(!rows.length)return <Empty text="No students currently have missing work."/>;return <div className="missing-list">{rows.map(r=><div className="missing-row" key={r.rollNo}><div><b>{r.name}</b><small>{r.rollNo}</small></div><span>{r.missing} missing</span></div>)}</div>}
-function ReviewRow({r,children}){return <tr><td><div className="table-person"><div className="mini-avatar">{r.name?.slice(0,1)}</div><div><b>{r.name}</b><small>{r.rollNo}</small></div></div></td><td><span className="week-tag">Week {r.week}</span></td><td><a className="repo-link" href={r.url} target="_blank" rel="noreferrer">Open GitHub <ExternalLink size={12}/></a></td><td>{fmtDate(r.submittedOn)}</td><td><div className="actions">{children}</div></td></tr>}
+function ReviewRow({r,children}){return <tr><td><div className="table-person"><div className="mini-avatar">{r.name?.slice(0,1)}</div><div><b>{r.name}</b><small>{r.rollNo}</small></div></div></td><td><div className="review-week-cell"><span className="week-tag">Week {r.week}</span>{r.week===10&&<small><BadgeCheck size={11}/> Certificate unlock</small>}</div></td><td><a className="repo-link" href={r.url} target="_blank" rel="noreferrer">Open GitHub <ExternalLink size={12}/></a></td><td>{fmtDate(r.submittedOn)}</td><td><div className="actions">{children}</div></td></tr>}
 function ReviewTable({rows,children}){return <div className="table-scroll"><table><thead><tr><th>Student</th><th>Week</th><th>Repository</th><th>Submitted</th><th>Action</th></tr></thead><tbody>{rows.map(r=><ReviewRow key={r.row} r={r}>{children(r)}</ReviewRow>)}</tbody></table></div>}
 function Review({data,review,busy}){
   return <><div className="page-intro"><div><span className="eyebrow">ACTION QUEUE</span><h1>Pending submissions.</h1><p>Open each repository, then approve or reject. The workbook updates automatically.</p></div><div className="queue-count">{data.pending.length}<small>pending</small></div></div>
@@ -263,5 +288,18 @@ function AddStudentForm({student,onAdd,onDone}){
 function Analytics({data}){const s=data.summary;return <><div className="page-intro"><div><span className="eyebrow">DEEP ANALYTICS</span><h1>Understand the whole cohort.</h1><p>Weekly trends, completion distribution, missing-work load and submission queue.</p></div></div><div className="stats-grid admin-stats"><Stat label="Average completion" value={pct(s.averageRate)} meta="Across active weeks" icon={BarChart3} tone="accent"/><Stat label="Students needing attention" value={s.studentsWithMissing} meta="At least one missing week" icon={AlertTriangle} tone="red"/><Stat label="Pending submissions" value={s.pending} meta="Need review" icon={Clock} tone="amber"/><Stat label="Perfect students" value={s.studentsAt100} meta="100% approved" icon={Star} tone="green"/></div><div className="dashboard-grid"><GlassCard className="panel"><div className="section-head"><div><span className="eyebrow">WEEK-BY-WEEK</span><h3>Detailed submission rates</h3></div></div><div className="analytics-weeks">{data.weekly.map(w=><div className="analytics-week" key={w.week}><div><b>Week {w.week}</b><span>{w.submitted} submitted • {w.missing} missing • {w.pending} pending</span></div><strong>{pct(w.rate)}</strong><ProgressBar value={w.rate*100}/></div>)}</div></GlassCard><GlassCard className="panel"><div className="section-head"><div><span className="eyebrow">DISTRIBUTION</span><h3>Student completion bands</h3></div></div><div className="distribution">{data.distribution.map(d=><div className="distribution-row" key={d.label}><div><span>{d.label}</span><b>{d.count}</b></div><ProgressBar value={s.students?d.count/s.students*100:0}/></div>)}</div></GlassCard></div></>}
 function Empty({text}){return <div className="empty"><div><Sparkles size={22}/></div><p>{text}</p></div>}
 
-function App(){ return <>{location.pathname.startsWith('/admin')?<Admin/>:<StudentPortal/>}<Toasts/></>; }
+function CertificatePreview(){
+  const queryEmail=new URLSearchParams(location.search).get('email')||'test@example.com';
+  const student={name:'Kamran Ahsan',rollNo:'PREVIEW-10',semester:'Certificate preview',email:queryEmail,projectName:'Student Progress Hub'};
+  return <div className="app-shell student-shell preview-shell">
+    <header className="top-nav glass"><div className="brand"><Logo/><div><b>Student Portal</b><small>Certificate eligibility preview</small></div></div><div className="nav-pill"><span className="live-dot"/> Local preview only</div></header>
+    <main className="container preview-container">
+      <div className="page-intro"><div><span className="eyebrow">DESIGN PREVIEW</span><h1>Certificate eligibility screen.</h1><p>This local-only preview uses sample data and does not read or write the student roster.</p></div></div>
+      <CertificateEligibility student={student}/>
+      <GlassCard className="preview-note"><ShieldCheck size={18}/><div><b>Safe test preview</b><p>Nothing was saved to Google Sheets and no email was sent. Use this screen to review the new student experience.</p></div></GlassCard>
+    </main>
+  </div>;
+}
+
+function App(){ return <>{import.meta.env.DEV&&location.pathname==='/certificate-preview'?<CertificatePreview/>:location.pathname.startsWith('/admin')?<Admin/>:<StudentPortal/>}<Toasts/></>; }
 createRoot(document.getElementById('root')).render(<App/>);

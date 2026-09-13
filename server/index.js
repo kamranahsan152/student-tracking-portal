@@ -264,7 +264,119 @@ function reviewEmailHtml({ name, rollNo, week, approved, reapproved }) {
 </div>`;
 }
 
-async function sendReviewEmail({ to, name, rollNo, week, action, reapproved }) {
+function certificateEligibilityEmailHtml({
+  name,
+  rollNo,
+  projectName,
+  submittedOn,
+}) {
+  const portalUrl = String(process.env.PORTAL_URL || "").trim();
+  const submittedDate = submittedOn
+    ? new Date(submittedOn).toLocaleDateString("en-PK", {
+        timeZone: "Asia/Karachi",
+        dateStyle: "long",
+      })
+    : "Not available";
+  const approvedOn = new Date().toLocaleDateString("en-PK", {
+      timeZone: "Asia/Karachi",
+      dateStyle: "long",
+    });
+  const portalAction = portalUrl
+    ? `<a href="${escapeHtml(portalUrl)}" style="display:inline-block;background:#173b35;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;padding:14px 22px;border-radius:10px">Open your student portal &rarr;</a>`
+    : `<span style="display:inline-block;color:#173b35;font-size:14px;font-weight:700;padding:14px 0">Open the Student Portal to see your completion status.</span>`;
+
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="x-apple-disable-message-reformatting" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>You are eligible for your certificate</title>
+  </head>
+  <body style="margin:0;padding:0;background:#f1f4f2;font-family:Arial,Helvetica,sans-serif;color:#17211e">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f1f4f2">
+      <tr>
+        <td align="center" style="padding:32px 14px">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:620px;background:#ffffff;border:1px solid #dfe8e2;border-radius:20px;overflow:hidden">
+            <tr>
+              <td style="padding:22px 30px;background:#173b35;color:#ffffff">
+                <div style="font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#b8d9b6">Student Portal</div>
+                <div style="font-size:14px;line-height:1.5;margin-top:6px;color:#eaf5e9">Final task review complete</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:42px 36px 30px;background:linear-gradient(145deg,#f5fbf3 0%,#ffffff 72%)">
+                <div style="display:inline-block;padding:8px 12px;border-radius:999px;background:#e4f4e3;color:#216b3b;font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase">Certificate eligibility unlocked</div>
+                <h1 style="margin:18px 0 12px;font-size:36px;line-height:1.08;letter-spacing:-1px;color:#173b35">Congratulations, ${escapeHtml(name)}.</h1>
+                <p style="margin:0;color:#50635b;font-size:16px;line-height:1.65">Your Week 10 final project has been approved by your admin. You are now eligible to receive your course completion certificate.</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 36px 30px">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f7faf7;border:1px solid #e1ebe3;border-radius:14px">
+                  <tr>
+                    <td style="padding:16px 18px;border-bottom:1px solid #e1ebe3;color:#6b7d74;font-size:13px">Final project</td>
+                    <td align="right" style="padding:16px 18px;border-bottom:1px solid #e1ebe3;color:#173b35;font-size:14px;font-weight:700">${escapeHtml(projectName || "Final project")}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:16px 18px;border-bottom:1px solid #e1ebe3;color:#6b7d74;font-size:13px">Roll No</td>
+                    <td align="right" style="padding:16px 18px;border-bottom:1px solid #e1ebe3;color:#173b35;font-size:14px;font-weight:700">${escapeHtml(rollNo)}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:16px 18px;border-bottom:1px solid #e1ebe3;color:#6b7d74;font-size:13px">Submitted on</td>
+                    <td align="right" style="padding:16px 18px;border-bottom:1px solid #e1ebe3;color:#173b35;font-size:14px;font-weight:700">${escapeHtml(submittedDate)}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:16px 18px;color:#6b7d74;font-size:13px">Approved on</td>
+                    <td align="right" style="padding:16px 18px;color:#173b35;font-size:14px;font-weight:700">${escapeHtml(approvedOn)}</td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 36px 34px">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                  <tr>
+                    <td valign="top" width="28" style="padding:2px 10px 14px 0;color:#2d874d;font-size:18px;font-weight:700">&#10003;</td>
+                    <td style="padding:0 0 14px;color:#334b41;font-size:14px;line-height:1.5"><b style="color:#173b35">Week 10 approved</b><br />Your final project passed admin review.</td>
+                  </tr>
+                  <tr>
+                    <td valign="top" width="28" style="padding:2px 10px 0 0;color:#2d874d;font-size:18px;font-weight:700">&#10003;</td>
+                    <td style="padding:0;color:#334b41;font-size:14px;line-height:1.5"><b style="color:#173b35">Certificate eligibility unlocked</b><br />Your completion status is now recorded in the portal.</td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:22px 36px;background:#edf6ed">
+                ${portalAction}
+                <p style="margin:14px 0 0;color:#60736a;font-size:12px;line-height:1.5">Please keep this email for your records. Certificate distribution details will be shared separately.</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 36px 30px;color:#6b7d74;font-size:12px;line-height:1.6">
+                Regards,<br /><b style="color:#173b35">Kamran Ahsan</b><br /><span>Student Portal</span>
+              </td>
+            </tr>
+          </table>
+          <div style="max-width:620px;padding:16px 8px 0;color:#82918a;font-size:11px;line-height:1.5">This is an automated update from the Student Portal.</div>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+}
+
+async function sendReviewEmail({
+  to,
+  name,
+  rollNo,
+  week,
+  action,
+  reapproved,
+  projectName,
+  submittedOn,
+}) {
   const transport = getMailer();
 
   if (!transport || !to) {
@@ -272,17 +384,22 @@ async function sendReviewEmail({ to, name, rollNo, week, action, reapproved }) {
   }
 
   const approved = action === "Approve";
-  const subject = reapproved
-    ? `Week ${week} submission approved after re-review`
-    : approved
-      ? `Week ${week} submission approved`
-      : `Week ${week} submission rejected`;
+  const certificateEligible = approved && week === finalTask.week;
+  const subject = certificateEligible
+    ? "Congratulations — you are eligible for your certificate"
+    : reapproved
+      ? `Week ${week} submission approved after re-review`
+      : approved
+        ? `Week ${week} submission approved`
+        : `Week ${week} submission rejected`;
 
-  const text = reapproved
-    ? `Hi ${name},\n\nYour Week ${week} submission (Roll No ${rollNo}) was rejected earlier, but your admin has reviewed it again and approved it. You do not need to resubmit — the week is now marked Submitted.\n\nRegards,\nKamran Ahsan`
-    : approved
-      ? `Hi ${name},\n\nYour Week ${week} submission (Roll No ${rollNo}) has been approved and is now marked Submitted.\n\nRegards,\nKamran Ahsan`
-      : `Hi ${name},\n\nYour Week ${week} submission (Roll No ${rollNo}) has been rejected and the week is now marked Missing. Please review and resubmit.\n\nRegards,\nKamran Ahsan`;
+  const text = certificateEligible
+    ? `Hi ${name},\n\nCongratulations — your Week ${week} final project (Roll No ${rollNo}) has been approved. You are now eligible to receive your course completion certificate. Your eligibility is recorded in the Student Portal.\n\nRegards,\nKamran Ahsan`
+    : reapproved
+      ? `Hi ${name},\n\nYour Week ${week} submission (Roll No ${rollNo}) was rejected earlier, but your admin has reviewed it again and approved it. You do not need to resubmit — the week is now marked Submitted.\n\nRegards,\nKamran Ahsan`
+      : approved
+        ? `Hi ${name},\n\nYour Week ${week} submission (Roll No ${rollNo}) has been approved and is now marked Submitted.\n\nRegards,\nKamran Ahsan`
+        : `Hi ${name},\n\nYour Week ${week} submission (Roll No ${rollNo}) has been rejected and the week is now marked Missing. Please review and resubmit.\n\nRegards,\nKamran Ahsan`;
 
   try {
     await transport.sendMail({
@@ -290,7 +407,14 @@ async function sendReviewEmail({ to, name, rollNo, week, action, reapproved }) {
       to,
       subject,
       text,
-      html: reviewEmailHtml({ name, rollNo, week, approved, reapproved }),
+      html: certificateEligible
+        ? certificateEligibilityEmailHtml({
+            name,
+            rollNo,
+            projectName,
+            submittedOn,
+          })
+        : reviewEmailHtml({ name, rollNo, week, approved, reapproved }),
     });
   } catch (error) {
     console.error("sendReviewEmail:", error.message);
@@ -699,6 +823,11 @@ async function getStudent(rollNo) {
     (item) => norm(item.status) === "PENDING",
   ).length;
 
+  const certificateEligible = studentSubmissions.some(
+    (item) =>
+      item.week === finalTask.week && norm(item.action) === "APPROVE",
+  );
+
   return {
     ...student,
 
@@ -712,11 +841,14 @@ async function getStudent(rollNo) {
 
     submissionPercent: weeksN > 0 ? submitted / weeksN : 0,
 
+    certificateEligible,
+
     weeks,
 
     finalTask: {
       ...finalTask,
       active: weeksN >= finalTask.week,
+      certificateEligible,
     },
   };
 }
@@ -1470,8 +1602,8 @@ app.post("/api/admin/review", adminAuth, async (req, res) => {
         retype it. D = Week 1 ... O = Week 12.
       */
 
-    const [rollNo, weekRaw] = (
-      await get(`${cfg.submissions}!A${sheetRow}:B${sheetRow}`)
+    const [rollNo, weekRaw, , submittedOn] = (
+      await get(`${cfg.submissions}!A${sheetRow}:D${sheetRow}`)
     )[0] || [];
 
     const week = Number(weekRaw);
@@ -1507,6 +1639,8 @@ app.post("/api/admin/review", adminAuth, async (req, res) => {
           week,
           action,
           reapproved,
+          projectName: student.projectName,
+          submittedOn,
         });
       }
     }

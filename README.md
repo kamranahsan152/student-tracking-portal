@@ -71,12 +71,20 @@ Set environment variables:
 GOOGLE_SHEET_ID=your_sheet_id
 GOOGLE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}
 ADMIN_KEY=a-long-random-secret
+# Optional: enables the "Open your student portal" button in certificate emails
+PORTAL_URL=https://your-portal-url.example
+# Email delivery (required only if review emails should be sent)
+GMAIL_USER=your-gmail-address
+GMAIL_APP_PASSWORD=your-gmail-app-password
 
 Start:
 `npm start`
 
 Student:
 http://localhost:10000/
+
+Certificate screen preview (development only; no Sheets or email activity):
+http://localhost:5173/certificate-preview?email=your-test-email@example.com
 
 Admin:
 http://localhost:10000/admin
@@ -95,6 +103,9 @@ Environment variables:
 - GOOGLE_SHEET_ID
 - GOOGLE_SERVICE_ACCOUNT_JSON
 - ADMIN_KEY
+- PORTAL_URL (optional)
+- GMAIL_USER (optional; enables review emails)
+- GMAIL_APP_PASSWORD (optional; use a Gmail app password)
 
 No database is required; Google Sheets is the data store.
 
@@ -159,6 +170,8 @@ The portal UI now follows the supplied Liquid Glass design direction: translucen
 - GitHub submission directly from a Missing week
 - Pending review state after submission
 - Repository link access after submission/review
+- Week 10 approval unlocks certificate eligibility in the student portal
+- A dedicated certificate-eligibility email is sent when Week 10 is approved
 
 ### Admin portal
 - `/admin` protected by `ADMIN_KEY`
