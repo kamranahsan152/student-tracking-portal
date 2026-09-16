@@ -684,7 +684,7 @@ async function getStudent(rollNo) {
 
   const [studentRows, trackingRows, dashboardRows, submissionRows] =
     await batchGet([
-      `${cfg.students}!A${cfg.studentStart}:M${cfg.studentEnd}`,
+      `${cfg.students}!A${cfg.studentStart}:N${cfg.studentEnd}`,
       `${cfg.tracking}!A${cfg.trackingStart}:AK${cfg.trackingEnd}`,
       `${cfg.dashboard}!B4`,
       `${cfg.submissions}!A${cfg.submissionStart}:E${cfg.submissionEnd}`,
@@ -699,6 +699,7 @@ async function getStudent(rollNo) {
       email: row[3] || "",
       githubProfile: row[4] || "",
       projectName: row[12] || "",
+      reopenWeek: Number(row[13]) || 0,
     }));
 
   const student = allStudents.find(
@@ -1064,9 +1065,17 @@ app.post("/api/submissions", async (req, res) => {
     /*
         The final task closes at its deadline. Only that week is
         time-limited; the other weeks stay open while active.
+        An admin can reopen it for one student past the deadline
+        (Students!N holds that student's reopened week number).
       */
 
-    if (weekNumber === finalTask.week && Date.now() > finalTaskDeadline()) {
+    const reopened = currentStudent.reopenWeek === weekNumber;
+
+    if (
+      weekNumber === finalTask.week &&
+      Date.now() > finalTaskDeadline() &&
+      !reopened
+    ) {
       throw new Error(
         `The Week ${finalTask.week} final task closed on ${finalTaskDeadlineLabel()}. Contact your admin if you still need to submit.`,
       );
@@ -1118,6 +1127,24 @@ app.post("/api/submissions", async (req, res) => {
     await update(`${cfg.submissions}!A${sheetRow}:D${sheetRow}`, [
       [String(rollNo).trim(), weekNumber, githubUrl, new Date().toISOString()],
     ]);
+
+    /*
+        A reopen is one-time use — clear it now that the
+        student has submitted so the deadline applies again.
+      */
+
+    if (reopened) {
+      const allStudents = await students();
+      const studentIndex = allStudents.findIndex(
+        (item) => norm(item.rollNo) === norm(rollNo),
+      );
+
+      if (studentIndex !== -1) {
+        await update(`${cfg.students}!N${cfg.studentStart + studentIndex}`, [
+          [""],
+        ]);
+      }
+    }
 
     /*
         Return fresh student data.
@@ -1304,6 +1331,76 @@ app.patch("/api/admin/students/:roll", adminAuth, async (req, res) => {
     });
   }
 });
+
+/* =========================================================
+   ADMIN - REOPEN WEEK 10 UPLOAD FOR ONE STUDENT
+
+   Wipes that student's Week 10 submission history (Approved or
+   Rejected) back to Missing and lets them upload again even
+   though the final-task deadline has passed. One-time: the
+   Students!N flag clears itself the moment they resubmit
+   (see POST /api/submissions).
+========================================================= */
+
+app.post(
+  "/api/admin/students/:roll/reopen-week10",
+  adminAuth,
+  async (req, res) => {
+    try {
+      const week = finalTask.week;
+
+      const existing = await students();
+
+      const index = existing.findIndex(
+        (student) => norm(student.rollNo) === norm(req.params.roll),
+      );
+
+      if (index < 0) {
+        throw new Error("Roll No not found.");
+      }
+
+      const cleanRoll = existing[index].rollNo;
+      const studentRow = cfg.studentStart + index;
+      const trackingRow = cfg.trackingStart + index;
+
+      /*
+          Clear any Approved/Rejected submission rows for this
+          student's Week 10 so they stop forcing the status.
+      */
+
+      const allSubmissions = await submissions();
+
+      const matches = allSubmissions
+        .filter(
+          (item) => norm(item.rollNo) === norm(cleanRoll) && item.week === week,
+        )
+        .map((item) => item.row);
+
+      await clearSubmissionRows(matches);
+
+      /*
+          Reset the manual tracking column for Week 10 (same
+          column POST /api/admin/review writes) and flag the
+          student as reopened so the deadline check lets them
+          back in.
+      */
+
+      const weekCol = String.fromCharCode("D".charCodeAt(0) + week - 1);
+
+      await update(`${cfg.tracking}!${weekCol}${trackingRow}`, [["Missing"]]);
+
+      await update(`${cfg.students}!N${studentRow}`, [[week]]);
+
+      res.json({ ok: true, rollNo: cleanRoll, week });
+    } catch (error) {
+      console.error("POST /api/admin/students/:roll/reopen-week10:", error);
+
+      res.status(400).json({
+        error: error.message,
+      });
+    }
+  },
+);
 
 /* =========================================================
    ADMIN - DELETE STUDENT
