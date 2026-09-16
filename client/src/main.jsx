@@ -184,17 +184,17 @@ function StudentDetails({student,onSubmit}){
       ? <CertificateEligibility student={student}/>
       : student.finalTask?.active&&<DeadlineNote finalTask={student.finalTask} status={student.weeks.find(w=>w.week===student.finalTask.week)?.status}/>} 
     <div className="stats-grid"><Stat label="Submitted" value={submitted} meta={`of ${student.activeWeeks} active weeks`} icon={CheckCircle2} tone="green"/><Stat label="Missing" value={missing} meta="Needs your attention" icon={AlertTriangle} tone="red"/><Stat label="Pending" value={pending} meta="Waiting for review" icon={Clock} tone="amber"/><Stat label="Completion" value={pct(student.submissionPercent)} meta="Approved submissions" icon={TrendingUp} tone="accent"/></div>
-    <GlassCard className="weekly-card"><div className="section-head"><div><span className="eyebrow">WEEKLY TRACKER</span><h3>Your 12-week journey</h3></div><span className="active-weeks">{student.activeWeeks} active weeks</span></div><div className="week-list">{student.weeks.map(w=><StudentWeek key={w.week} week={w} onSubmit={onSubmit} finalTask={student.finalTask}/>)}</div></GlassCard>
+    <GlassCard className="weekly-card"><div className="section-head"><div><span className="eyebrow">WEEKLY TRACKER</span><h3>Your 12-week journey</h3></div><span className="active-weeks">{student.activeWeeks} active weeks</span></div><div className="week-list">{student.weeks.map(w=><StudentWeek key={w.week} week={w} onSubmit={onSubmit} finalTask={student.finalTask} reopened={student.reopenWeek===w.week}/>)}</div></GlassCard>
   </>
 }
 
 function EmailBadge({email}){
   return <GlassCard className="email-card"><Icon><Mail size={16}/></Icon><span>Progress emails go to <b>{email}</b></span></GlassCard>;
 }
-function StudentWeek({week,onSubmit,finalTask}){
+function StudentWeek({week,onSubmit,finalTask,reopened}){
   const [url,setUrl]=useState('');
-  /* The final week stops accepting uploads once its deadline passes. */
-  const closed=finalTask&&week.week===finalTask.week&&Date.now()>new Date(finalTask.deadline).getTime();
+  /* The final week stops accepting uploads once its deadline passes, unless an admin reopened it for this student. */
+  const closed=finalTask&&week.week===finalTask.week&&Date.now()>new Date(finalTask.deadline).getTime()&&!reopened;
   return <div className={`week-row ${week.status.toLowerCase()}`}><div className="week-number"><span>W{String(week.week).padStart(2,'0')}</span><div><b>Week {week.week}</b><small>{week.status==='Submitted'?'Submission approved':week.status==='Pending'?'Under admin review':closed?'Final task closed':'Assignment is missing'}</small></div></div><div className="week-action"><Badge status={week.status}/>{week.status==='Missing'&&(closed?<span className="muted">Upload window closed • contact your admin</span>:<div className="submit-inline"><input value={url} onChange={e=>setUrl(e.target.value)} placeholder="GitHub repository URL"/><button className="primary small" onClick={()=>onSubmit(week.week,url)}>Submit</button></div>)}{week.status==='Pending'&&<span className="muted">GitHub link received • awaiting review</span>}{week.githubUrl&&<a className="repo-link" href={week.githubUrl} target="_blank" rel="noreferrer">Open repository <ExternalLink size={12}/></a>}</div></div>
 }
 
