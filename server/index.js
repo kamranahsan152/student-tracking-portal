@@ -5,10 +5,26 @@ import dotenv from "dotenv";
 import { google } from "googleapis";
 import nodemailer from "nodemailer";
 import path from "path";
+import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+/*
+    Inlined so the certificate report stays a single
+    self-contained file — it's opened from a blob URL, where
+    a relative image path would not resolve.
+*/
+
+const uogLogo = (() => {
+  try {
+    const file = readFileSync(path.join(__dirname, "assets", "uog-logo.jpeg"));
+    return `data:image/jpeg;base64,${file.toString("base64")}`;
+  } catch {
+    return "";
+  }
+})();
 
 // IMPORTANT:
 // Your .env is inside /server, not the project root.
@@ -1637,6 +1653,378 @@ app.get("/api/admin/summary", adminAuth, async (req, res) => {
   } catch (error) {
     console.error("GET /api/admin/summary:", error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+/* =========================================================
+   ADMIN - CERTIFICATE ELIGIBILITY REPORT (PDF via print)
+
+   Returns a print-ready HTML page instead of JSON. The client
+   opens it in a new tab and calls window.print(), so "Save as
+   PDF" in the browser's print dialog is the export — no PDF
+   library needed on either side.
+========================================================= */
+
+app.get("/api/admin/certificate-report", adminAuth, async (req, res) => {
+  try {
+    const analytics = await getAdminAnalytics();
+
+    const eligible = analytics.students
+      .filter((student) => student.rate >= 1)
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    const weeksLabel = analytics.summary.activeWeeks;
+
+    const generatedOn = new Date().toLocaleString("en-PK", {
+      timeZone: "Asia/Karachi",
+      dateStyle: "long",
+      timeStyle: "short",
+    });
+
+    /*
+        A reference number makes the document citable in
+        correspondence, the way a formal transmittal expects.
+    */
+
+    const now = new Date();
+
+    const reference = `UOG/HCS/CERT/${now.getFullYear()}/${String(eligible.length).padStart(3, "0")}`;
+
+    const issuedOn = now.toLocaleDateString("en-PK", {
+      timeZone: "Asia/Karachi",
+      dateStyle: "long",
+    });
+
+    const githubHandle = (url) =>
+      String(url || "")
+        .replace(/^https?:\/\/(www\.)?github\.com\//i, "")
+        .replace(/\/+$/, "");
+
+    const rows = eligible
+      .map(
+        (student, index) => `
+          <tr>
+            <td class="num">${index + 1}</td>
+            <td class="name">${escapeHtml(student.name)}</td>
+            <td class="mono">${escapeHtml(student.rollNo)}</td>
+            <td>${
+              student.githubProfile
+                ? `<a href="${escapeHtml(student.githubProfile)}">${escapeHtml(githubHandle(student.githubProfile))}</a>`
+                : '<span class="none">Not provided</span>'
+            }</td>
+            <td>${escapeHtml(student.email) || '<span class="none">Not provided</span>'}</td>
+            <td class="rate">${Math.round(student.rate * 100)}%</td>
+            <td class="verdict">Eligible</td>
+          </tr>`,
+      )
+      .join("");
+
+    res.set("Content-Type", "text/html").send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Final Report — Certificate Eligibility</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Source+Sans+3:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /*
+      US Legal, portrait. The running header/footer repeat on
+      every page because thead/tfoot are table sections, which
+      is the only way to repeat content across printed pages
+      without a PDF engine.
+  */
+  @page {
+    size: legal portrait;
+    margin: 16mm 14mm 18mm;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: 'Source Sans 3', system-ui, sans-serif;
+    color: #1c1c1e;
+    margin: 0;
+    font-size: 10.5pt;
+    line-height: 1.5;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .sheet { max-width: 216mm; margin: 0 auto; padding: 0 4mm; }
+
+  /* ---------- Letterhead ---------- */
+
+  .letterhead {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    border-bottom: 2.5pt solid #7f1d1d;
+    padding-bottom: 12px;
+  }
+
+  .crest { height: 58px; width: auto; flex: none; }
+
+  .crest-text {
+    width: 52px; height: 52px; flex: none;
+    border: 1.5pt solid #7f1d1d;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Source Sans 3', system-ui, sans-serif;
+    font-size: 13pt; font-weight: 700; color: #7f1d1d;
+    letter-spacing: .5px;
+  }
+
+  .letterhead .org h1 {
+    font-family: 'Libre Baskerville', Georgia, serif;
+    font-size: 16pt; margin: 0; color: #7f1d1d; letter-spacing: .2px;
+  }
+
+  .letterhead .org p {
+    margin: 2px 0 0; font-size: 9.5pt; color: #555; letter-spacing: 2.2px; text-transform: uppercase;
+  }
+
+  .letterhead .issued { margin-left: auto; text-align: right; font-size: 8.5pt; color: #555; line-height: 1.7; }
+  .letterhead .issued b { color: #1c1c1e; font-family: 'JetBrains Mono', monospace; font-size: 8pt; }
+
+  /* ---------- Title block ---------- */
+
+  .title-block { text-align: center; margin: 22px 0 6px; }
+
+  .title-block .kicker {
+    font-size: 8.5pt; letter-spacing: 3.5px; text-transform: uppercase; color: #7f1d1d; font-weight: 700;
+  }
+
+  .title-block h2 {
+    font-family: 'Libre Baskerville', Georgia, serif;
+    font-size: 19pt; margin: 8px 0 6px; font-weight: 700;
+  }
+
+  .title-block .rule { width: 62px; height: 2pt; background: #7f1d1d; margin: 0 auto; }
+
+  .preamble {
+    margin: 16px 0 18px;
+    font-size: 10pt; line-height: 1.7; text-align: justify;
+    padding: 12px 16px; background: #faf7f7;
+    border-left: 2.5pt solid #7f1d1d;
+  }
+
+  /* ---------- Summary strip ---------- */
+
+  .summary { display: flex; gap: 10px; margin-bottom: 16px; }
+
+  .summary div {
+    flex: 1; border: .8pt solid #d8d8dc; border-top: 2pt solid #7f1d1d;
+    padding: 9px 12px; background: #fcfcfd;
+  }
+
+  .summary span { display: block; font-size: 7.5pt; letter-spacing: 1.4px; text-transform: uppercase; color: #666; }
+  .summary strong { display: block; font-size: 15pt; font-family: 'Libre Baskerville', Georgia, serif; margin-top: 3px; }
+
+  /* ---------- Register ---------- */
+
+  table.register { width: 100%; border-collapse: collapse; font-size: 9pt; }
+
+  table.register thead th {
+    background: #7f1d1d; color: #fff; font-weight: 600;
+    font-size: 8pt; letter-spacing: .9px; text-transform: uppercase;
+    padding: 9px 8px; text-align: left; border: .8pt solid #7f1d1d;
+  }
+
+  table.register tbody td {
+    border: .8pt solid #dcdce0; padding: 7px 8px; vertical-align: middle;
+  }
+
+  table.register tbody tr:nth-child(even) td { background: #f8f8fa; }
+
+  table.register a { color: #1d4ed8; text-decoration: none; }
+
+  .num { text-align: center; width: 30px; color: #777; font-family: 'JetBrains Mono', monospace; font-size: 8pt; }
+  .name { font-weight: 600; white-space: nowrap; }
+  .mono { font-family: 'JetBrains Mono', monospace; font-size: 8.5pt; white-space: nowrap; }
+  .rate { text-align: center; width: 62px; font-weight: 700; color: #15803d; font-family: 'JetBrains Mono', monospace; }
+  .none { color: #9a9aa0; font-style: italic; }
+
+  .verdict {
+    text-align: center; width: 74px; font-size: 7.5pt; font-weight: 700;
+    letter-spacing: .8px; text-transform: uppercase; color: #15803d;
+  }
+
+  /* Never split a student's row across two pages. */
+  table.register tbody tr { page-break-inside: avoid; }
+  table.register thead { display: table-header-group; }
+
+  .empty-row { text-align: center; color: #9a9aa0; font-style: italic; padding: 22px !important; }
+
+  /* ---------- Attestation & signature ---------- */
+
+  .attestation { margin-top: 22px; page-break-inside: avoid; }
+
+  .attestation p { font-size: 9.5pt; line-height: 1.7; text-align: justify; margin: 0 0 22px; }
+
+  .signatures { display: flex; gap: 48px; }
+
+  .sign { flex: 1; }
+  .sign .line { border-bottom: .8pt solid #1c1c1e; height: 34px; }
+  .sign b { display: block; font-size: 10pt; margin-top: 6px; }
+  .sign span { display: block; font-size: 8.5pt; color: #555; }
+
+  /* ---------- Footer ---------- */
+
+  .doc-footer {
+    margin-top: 26px; padding-top: 10px;
+    border-top: .8pt solid #d8d8dc;
+    font-size: 8pt; color: #666; line-height: 1.7;
+    display: flex; justify-content: space-between; gap: 16px;
+  }
+
+  .doc-footer .left b { color: #7f1d1d; }
+  .doc-footer .right { text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 7.5pt; }
+
+  .confidential {
+    margin-top: 8px; text-align: center;
+    font-size: 7.5pt; letter-spacing: 2px; text-transform: uppercase; color: #9a9aa0;
+  }
+
+  /* ---------- Screen-only toolbar ---------- */
+
+  .toolbar {
+    position: sticky; top: 0; z-index: 10;
+    background: #1c1c1e; color: #fff; padding: 10px 16px; margin-bottom: 18px;
+    display: flex; align-items: center; gap: 14px; font-size: 9.5pt;
+  }
+
+  .toolbar button {
+    font: inherit; font-weight: 600; cursor: pointer;
+    background: #fff; color: #1c1c1e; border: 0; padding: 7px 16px; border-radius: 3px;
+  }
+
+  /*
+      tfoot repeats on every printed page by spec, the same way
+      thead does — unlike position:fixed, which Chrome only
+      repeats on some print paths.
+  */
+
+  table.register tfoot { display: table-footer-group; }
+
+  table.register tfoot td {
+    border: 0; border-top: .5pt solid #e2e2e6;
+    padding: 5px 2px 0; font-size: 6.5pt; color: #9a9aa0;
+    font-family: 'JetBrains Mono', monospace; letter-spacing: .2px;
+  }
+
+  table.register tfoot .fl { text-align: left; }
+  table.register tfoot .fr { text-align: right; }
+
+  @media print {
+    .toolbar { display: none; }
+    .sheet { max-width: none; padding: 0; }
+  }
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <button onclick="window.print()">Save as PDF</button>
+    <span>Choose <b>Destination: Save as PDF</b> &middot; Paper: <b>Legal</b> &middot; enable <b>Background graphics</b>.</span>
+  </div>
+
+  <div class="sheet">
+    <div class="letterhead">
+      ${uogLogo ? `<img class="crest" src="${uogLogo}" alt="University of Gujrat">` : `<div class="crest-text">UOG</div>`}
+      <div class="org">
+        <h1>Hayatian Computing Society</h1>
+        <p>University of Gujrat</p>
+      </div>
+      <div class="issued">
+        Ref: <b>${escapeHtml(reference)}</b><br>
+        Dated: <b>${escapeHtml(issuedOn)}</b>
+      </div>
+    </div>
+
+    <div class="title-block">
+      <div class="kicker">Final Report</div>
+      <h2>Certificate of Completion — Eligibility Register</h2>
+      <div class="rule"></div>
+    </div>
+
+    <div class="preamble">
+      This report presents the official register of participants who have successfully completed the
+      structured ${weeksLabel}-week programme conducted under the Hayatian Computing Society, University of Gujrat.
+      Each participant listed below has submitted and obtained approval for every assigned weekly task,
+      including the Week ${finalTask.week} final project, and is therefore certified as eligible to receive the
+      Course Completion Certificate.
+    </div>
+
+    <div class="summary">
+      <div><span>Eligible Participants</span><strong>${eligible.length}</strong></div>
+      <div><span>Programme Duration</span><strong>${weeksLabel} Weeks</strong></div>
+      <div><span>Completion Rate</span><strong>100%</strong></div>
+      <div><span>Total Enrolled</span><strong>${analytics.summary.students}</strong></div>
+    </div>
+
+    <table class="register">
+      <thead>
+        <tr>
+          <th class="num">#</th>
+          <th>Participant Name</th>
+          <th>Roll Number</th>
+          <th>GitHub Profile</th>
+          <th>Email Address</th>
+          <th class="rate">Completion</th>
+          <th class="verdict">Status</th>
+        </tr>
+      </thead>
+      <tfoot>
+        <tr>
+          <td colspan="4" class="fl">University of Gujrat &middot; Hayatian Computing Society &middot; Final Report</td>
+          <td colspan="3" class="fr">${escapeHtml(reference)}</td>
+        </tr>
+      </tfoot>
+      <tbody>
+        ${rows || `<tr><td colspan="7" class="empty-row">No participants have reached 100% completion at the time of issue.</td></tr>`}
+      </tbody>
+    </table>
+
+    <div class="attestation">
+      <p>
+        Certified that the particulars stated in this register have been compiled from the official
+        submission records maintained for the programme, and that the ${eligible.length} participant${eligible.length === 1 ? "" : "s"}
+        named herein ${eligible.length === 1 ? "has" : "have"} fulfilled all requirements prescribed for the award of the
+        Course Completion Certificate.
+      </p>
+      <div class="signatures">
+        <div class="sign">
+          <div class="line"></div>
+          <b>Kamran Ahsan</b>
+          <span>Instructor &amp; Programme Lead</span>
+        </div>
+        <div class="sign">
+          <div class="line"></div>
+          <b>Hayatian Computing Society</b>
+          <span>Authorised Signatory &middot; University of Gujrat</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="doc-footer">
+      <div class="left">
+        <b>University of Gujrat</b> &middot; Hayatian Computing Society<br>
+        Instructor: Kamran Ahsan
+      </div>
+      <div class="right">
+        ${escapeHtml(reference)}<br>
+        Generated ${escapeHtml(generatedOn)}
+      </div>
+    </div>
+    <div class="confidential">Official Document — Not valid without authorised signature</div>
+  </div>
+
+  <script>window.onload = () => window.print();</script>
+</body>
+</html>`);
+  } catch (error) {
+    console.error("GET /api/admin/certificate-report:", error);
+    res.status(500).send(`<p>Error: ${escapeHtml(error.message)}</p>`);
   }
 });
 
